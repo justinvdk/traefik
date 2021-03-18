@@ -30,7 +30,6 @@ import (
 	"github.com/traefik/traefik/v2/pkg/log"
 	"github.com/traefik/traefik/v2/pkg/metrics"
 	"github.com/traefik/traefik/v2/pkg/middlewares/accesslog"
-	"github.com/traefik/traefik/v2/pkg/pilot"
 	"github.com/traefik/traefik/v2/pkg/provider/acme"
 	"github.com/traefik/traefik/v2/pkg/provider/aggregator"
 	"github.com/traefik/traefik/v2/pkg/provider/traefik"
@@ -123,12 +122,6 @@ func runCmd(staticConfiguration *static.Configuration) error {
 
 	ctx := cmd.ContextWithSignal(context.Background())
 
-	if staticConfiguration.Experimental != nil && staticConfiguration.Experimental.DevPlugin != nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Minute)
-		defer cancel()
-	}
-
 	if staticConfiguration.Ping != nil {
 		staticConfiguration.Ping.WithContext(ctx)
 	}
@@ -210,33 +203,10 @@ func setupServer(staticConfiguration *static.Configuration) (*server.Server, err
 		return nil, err
 	}
 
-	// Pilot
-
-	var aviator *pilot.Pilot
-	var pilotRegistry *metrics.PilotRegistry
-	if isPilotEnabled(staticConfiguration) {
-		pilotRegistry = metrics.RegisterPilot()
-
-		aviator = pilot.New(staticConfiguration.Pilot.Token, pilotRegistry, routinesPool)
-
-		routinesPool.GoCtx(func(ctx context.Context) {
-			aviator.Tick(ctx)
-		})
-	}
-
-	// Plugins
-
-	pluginBuilder, err := createPluginBuilder(staticConfiguration)
-	if err != nil {
-		return nil, err
-	}
-
 	// Metrics
 
 	metricRegistries := registerMetricClients(staticConfiguration.Metrics)
-	if pilotRegistry != nil {
-		metricRegistries = append(metricRegistries, pilotRegistry)
-	}
+
 	metricsRegistry := metrics.NewMultiRegistry(metricRegistries)
 
 	// Service manager factory
@@ -249,7 +219,7 @@ func setupServer(staticConfiguration *static.Configuration) (*server.Server, err
 
 	accessLog := setupAccessLog(staticConfiguration.AccessLog)
 	chainBuilder := middleware.NewChainBuilder(*staticConfiguration, metricsRegistry, accessLog)
-	routerFactory := server.NewRouterFactory(*staticConfiguration, managerFactory, tlsManager, chainBuilder, pluginBuilder)
+	routerFactory := server.NewRouterFactory(*staticConfiguration, managerFactory, tlsManager, chainBuilder)
 
 	// Watcher
 
@@ -284,7 +254,7 @@ func setupServer(staticConfiguration *static.Configuration) (*server.Server, err
 	})
 
 	// Switch router
-	watcher.AddListener(switchRouter(routerFactory, serverEntryPointsTCP, serverEntryPointsUDP, aviator))
+	watcher.AddListener(switchRouter(routerFactory, serverEntryPointsTCP, serverEntryPointsUDP))
 
 	// Metrics
 	if metricsRegistry.IsEpEnabled() || metricsRegistry.IsSvcEnabled() {
@@ -352,15 +322,11 @@ func getDefaultsEntrypoints(staticConfiguration *static.Configuration) []string 
 	return defaultEntryPoints
 }
 
-func switchRouter(routerFactory *server.RouterFactory, serverEntryPointsTCP server.TCPEntryPoints, serverEntryPointsUDP server.UDPEntryPoints, aviator *pilot.Pilot) func(conf dynamic.Configuration) {
+func switchRouter(routerFactory *server.RouterFactory, serverEntryPointsTCP server.TCPEntryPoints, serverEntryPointsUDP server.UDPEntryPoints) func(conf dynamic.Configuration) {
 	return func(conf dynamic.Configuration) {
 		rtConf := runtime.NewConfig(conf)
 
 		routers, udpRouters := routerFactory.CreateRouters(rtConf)
-
-		if aviator != nil {
-			aviator.SetDynamicConfiguration(conf)
-		}
 
 		serverEntryPointsTCP.Switch(routers)
 		serverEntryPointsUDP.Switch(udpRouters)

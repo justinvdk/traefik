@@ -44,12 +44,11 @@
 
 <script>
 import config from '../../../package'
-import PlatformAuthState from '../platform/PlatformAuthState'
 import { mapActions, mapGetters } from 'vuex'
 
 export default {
   name: 'NavBar',
-  components: { PlatformAuthState },
+  components: { },
   computed: {
     ...mapGetters('core', { coreVersion: 'version' }),
     version () {

@@ -25,14 +25,12 @@ type RouterFactory struct {
 
 	managerFactory *service.ManagerFactory
 
-	pluginBuilder middleware.PluginsBuilder
-
 	chainBuilder *middleware.ChainBuilder
 	tlsManager   *tls.Manager
 }
 
 // NewRouterFactory creates a new RouterFactory.
-func NewRouterFactory(staticConfiguration static.Configuration, managerFactory *service.ManagerFactory, tlsManager *tls.Manager, chainBuilder *middleware.ChainBuilder, pluginBuilder middleware.PluginsBuilder) *RouterFactory {
+func NewRouterFactory(staticConfiguration static.Configuration, managerFactory *service.ManagerFactory, tlsManager *tls.Manager, chainBuilder *middleware.ChainBuilder) *RouterFactory {
 	var entryPointsTCP, entryPointsUDP []string
 	for name, cfg := range staticConfiguration.EntryPoints {
 		protocol, err := cfg.GetProtocol()
@@ -54,7 +52,6 @@ func NewRouterFactory(staticConfiguration static.Configuration, managerFactory *
 		managerFactory: managerFactory,
 		tlsManager:     tlsManager,
 		chainBuilder:   chainBuilder,
-		pluginBuilder:  pluginBuilder,
 	}
 }
 
@@ -65,7 +62,7 @@ func (f *RouterFactory) CreateRouters(rtConf *runtime.Configuration) (map[string
 	// HTTP
 	serviceManager := f.managerFactory.Build(rtConf)
 
-	middlewaresBuilder := middleware.NewBuilder(rtConf.Middlewares, serviceManager, f.pluginBuilder)
+	middlewaresBuilder := middleware.NewBuilder(rtConf.Middlewares, serviceManager)
 
 	routerManager := router.NewManager(rtConf, serviceManager, middlewaresBuilder, f.chainBuilder)
 

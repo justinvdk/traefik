@@ -4,23 +4,11 @@
     @onClose="closePlatform()"
     v-if="isOnline"
   >
-    <div class="iframe-wrapper">
-      <iframe
-        id="platform-iframe"
-        :src="iFrameUrl"
-        v-resize="resizeOpts"
-        style="position: relative; height: 100%; width: 100%;"
-        frameBorder="0"
-        scrolling="yes"
-        @load="onIFrameLoad"
-      />
-    </div>
   </side-panel>
 </template>
 
 <script>
 import { mapActions, mapGetters } from 'vuex'
-import qs from 'query-string'
 import SidePanel from '../_commons/SidePanel'
 import Helps from '../../_helpers/Helps'
 import '../../_directives/resize'
@@ -65,12 +53,6 @@ export default {
   computed: {
     ...mapGetters('platform', { isPlatformOpen: 'isOpen', platformPath: 'path' }),
     ...mapGetters('core', { instanceInfos: 'version' }),
-    iFrameUrl () {
-      const instanceInfos = JSON.stringify(this.instanceInfos)
-      const authRedirectUrl = `${window.location.href.split('?')[0]}?platform=${this.platformPath}`
-
-      return qs.stringifyUrl({ url: `${this.platformUrl}${this.platformPath}`, query: { authRedirectUrl, instanceInfos } })
-    },
     isOnline () {
       return window.navigator.onLine
     }

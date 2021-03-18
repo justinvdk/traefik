@@ -14,7 +14,6 @@ import (
 	"github.com/traefik/traefik/v2/pkg/config/dynamic"
 	"github.com/traefik/traefik/v2/pkg/config/static"
 	"github.com/traefik/traefik/v2/pkg/ping"
-	"github.com/traefik/traefik/v2/pkg/plugins"
 	"github.com/traefik/traefik/v2/pkg/provider/acme"
 	"github.com/traefik/traefik/v2/pkg/provider/consulcatalog"
 	"github.com/traefik/traefik/v2/pkg/provider/docker"
@@ -941,10 +940,6 @@ func TestDo_staticConfiguration(t *testing.T) {
 				TLSChallenge: &acme.TLSChallenge{},
 			},
 		},
-	}
-
-	config.Pilot = &static.Pilot{
-		Token: "token",
 	}
 
 	config.Experimental = &static.Experimental{

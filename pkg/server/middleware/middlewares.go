@@ -40,7 +40,6 @@ const (
 // Builder the middleware builder.
 type Builder struct {
 	configs        map[string]*runtime.MiddlewareInfo
-	pluginBuilder  PluginsBuilder
 	serviceBuilder serviceBuilder
 }
 
@@ -49,8 +48,8 @@ type serviceBuilder interface {
 }
 
 // NewBuilder creates a new Builder.
-func NewBuilder(configs map[string]*runtime.MiddlewareInfo, serviceBuilder serviceBuilder, pluginBuilder PluginsBuilder) *Builder {
-	return &Builder{configs: configs, serviceBuilder: serviceBuilder, pluginBuilder: pluginBuilder}
+func NewBuilder(configs map[string]*runtime.MiddlewareInfo, serviceBuilder serviceBuilder) *Builder {
+	return &Builder{configs: configs, serviceBuilder: serviceBuilder}
 }
 
 // BuildChain creates a middleware chain.
@@ -336,27 +335,6 @@ func (b *Builder) buildConstructor(ctx context.Context, middlewareName string) (
 		}
 		middleware = func(next http.Handler) (http.Handler, error) {
 			return stripprefixregex.New(ctx, next, *config.StripPrefixRegex, middlewareName)
-		}
-	}
-
-	// Plugin
-	if config.Plugin != nil {
-		if middleware != nil {
-			return nil, badConf
-		}
-
-		pluginType, rawPluginConfig, err := findPluginConfig(config.Plugin)
-		if err != nil {
-			return nil, err
-		}
-
-		plug, err := b.pluginBuilder.Build(pluginType, rawPluginConfig, middlewareName)
-		if err != nil {
-			return nil, err
-		}
-
-		middleware = func(next http.Handler) (http.Handler, error) {
-			return plug(ctx, next)
 		}
 	}
 

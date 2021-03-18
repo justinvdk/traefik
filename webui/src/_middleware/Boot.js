@@ -15,9 +15,6 @@ const Boot = {
         env () {
           return APP.config.env
         },
-        platformUrl () {
-          return APP.config.platformUrl
-        },
         appThumbStyle () {
           return {
             right: '2px',
