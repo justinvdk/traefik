@@ -30,13 +30,6 @@
           </q-tabs>
           <div class="right-menu">
             <q-tabs>
-              <div class="tooltip" :class="{ 'is-dark-mode': $q.dark.isActive }">
-                <q-btn type="a" href="https://traefik.io/try-hub-now" target="_blank" flat no-caps label="Try Traefik Hub →" class="btn-menu btn-hub" />
-                <div class="content">
-                  <p>Extend your capabilities to API Management</p>
-                  <img alt="" v-bind:src="getHubLogoSrc($q.dark.isActive)" width="100px" />
-                </div>
-              </div>
               <q-btn @click="$q.dark.toggle()" stretch flat no-caps icon="invert_colors" :label="`${$q.dark.isActive ? 'Light' : 'Dark'} theme`" class="btn-menu" />
               <q-btn stretch flat icon="eva-question-mark-circle-outline">
                 <q-menu anchor="bottom left" auto-close>
