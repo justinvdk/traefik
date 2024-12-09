@@ -21,7 +21,6 @@ func TestRemoteAddrStrategy_GetIP(t *testing.T) {
 	}
 
 	for _, test := range testCases {
-		test := test
 		t.Run(test.desc, func(t *testing.T) {
 			t.Parallel()
 
@@ -47,7 +46,7 @@ func TestDepthStrategy_GetIP(t *testing.T) {
 			expected:      "10.0.0.3",
 		},
 		{
-			desc:          "Use non existing depth in XForwardedFor",
+			desc:          "Use nonexistent depth in XForwardedFor",
 			depth:         2,
 			xForwardedFor: "",
 			expected:      "",
@@ -61,7 +60,6 @@ func TestDepthStrategy_GetIP(t *testing.T) {
 	}
 
 	for _, test := range testCases {
-		test := test
 		t.Run(test.desc, func(t *testing.T) {
 			t.Parallel()
 
@@ -109,7 +107,6 @@ func TestTrustedIPsStrategy_GetIP(t *testing.T) {
 	}
 
 	for _, test := range testCases {
-		test := test
 		t.Run(test.desc, func(t *testing.T) {
 			t.Parallel()
 

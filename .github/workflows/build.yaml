@@ -4,26 +4,41 @@ on:
   pull_request:
     branches:
       - '*'
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'script/gcg/**'
 
 env:
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.23'
   CGO_ENABLED: 0
-  IN_DOCKER: ""
 
 jobs:
 
   build-webui:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: webui/.nvmrc
+          cache: yarn
+          cache-dependency-path: webui/yarn.lock
+
       - name: Build webui
+        working-directory: ./webui
         run: |
-          make clean-webui generate-webui
+          yarn install
+          yarn build
+
+      - name: Package webui
+        run: |
           # Workaround for tar trying to archive the output archive. Must be excluded as well.
           touch traefik.src.tar.gz
           tar czvf traefik.src.tar.gz \
@@ -33,7 +48,7 @@ jobs:
             .
 
       - name: Artifact webui
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: traefik.src.tar.gz
           path: traefik.src.tar.gz

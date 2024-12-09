@@ -5,49 +5,50 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"testing"
 	"time"
 
-	"github.com/go-check/check"
-	"github.com/traefik/traefik/v2/integration/try"
-	checker "github.com/vdemeester/shakers"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+	"github.com/traefik/traefik/v3/integration/try"
 )
 
 // Headers tests suite.
 type HeadersSuite struct{ BaseSuite }
 
-func (s *HeadersSuite) TestSimpleConfiguration(c *check.C) {
-	cmd, display := s.traefikCmd(withConfigFile("fixtures/headers/basic.toml"))
-	defer display(c)
-	err := cmd.Start()
-	c.Assert(err, checker.IsNil)
-	defer s.killCmd(cmd)
-
-	// Expected a 404 as we did not configure anything
-	err = try.GetRequest("http://127.0.0.1:8000/", 1000*time.Millisecond, try.StatusCodeIs(http.StatusNotFound))
-	c.Assert(err, checker.IsNil)
+func TestHeadersSuite(t *testing.T) {
+	suite.Run(t, new(HeadersSuite))
 }
 
-func (s *HeadersSuite) TestReverseProxyHeaderRemoved(c *check.C) {
-	file := s.adaptFile(c, "fixtures/headers/remove_reverseproxy_headers.toml", struct{}{})
-	defer os.Remove(file)
-	cmd, display := s.traefikCmd(withConfigFile(file))
-	defer display(c)
+func (s *HeadersSuite) TearDownTest() {
+	s.displayTraefikLogFile(traefikTestLogFile)
+	_ = os.Remove(traefikTestAccessLogFile)
+}
 
-	err := cmd.Start()
-	c.Assert(err, checker.IsNil)
-	defer s.killCmd(cmd)
+func (s *HeadersSuite) TestSimpleConfiguration() {
+	s.traefikCmd(withConfigFile("fixtures/headers/basic.toml"))
+
+	// Expected a 404 as we did not configure anything
+	err := try.GetRequest("http://127.0.0.1:8000/", 1000*time.Millisecond, try.StatusCodeIs(http.StatusNotFound))
+	require.NoError(s.T(), err)
+}
+
+func (s *HeadersSuite) TestReverseProxyHeaderRemoved() {
+	file := s.adaptFile("fixtures/headers/remove_reverseproxy_headers.toml", struct{}{})
+	s.traefikCmd(withConfigFile(file))
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, found := r.Header["X-Forwarded-Host"]
-		c.Assert(found, checker.True)
+		assert.True(s.T(), found)
 		_, found = r.Header["Foo"]
-		c.Assert(found, checker.False)
+		assert.False(s.T(), found)
 		_, found = r.Header["X-Forwarded-For"]
-		c.Assert(found, checker.False)
+		assert.False(s.T(), found)
 	})
 
 	listener, err := net.Listen("tcp", "127.0.0.1:9000")
-	c.Assert(err, checker.IsNil)
+	require.NoError(s.T(), err)
 
 	ts := &httptest.Server{
 		Listener: listener,
@@ -57,31 +58,72 @@ func (s *HeadersSuite) TestReverseProxyHeaderRemoved(c *check.C) {
 	defer ts.Close()
 
 	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8000/", nil)
-	c.Assert(err, checker.IsNil)
+	require.NoError(s.T(), err)
 	req.Host = "test.localhost"
 	req.Header = http.Header{
 		"Foo": {"bar"},
 	}
 
 	err = try.Request(req, 500*time.Millisecond, try.StatusCodeIs(http.StatusOK))
-	c.Assert(err, checker.IsNil)
+	require.NoError(s.T(), err)
 }
 
-func (s *HeadersSuite) TestCorsResponses(c *check.C) {
-	file := s.adaptFile(c, "fixtures/headers/cors.toml", struct{}{})
-	defer os.Remove(file)
-	cmd, display := s.traefikCmd(withConfigFile(file))
-	defer display(c)
+func (s *HeadersSuite) TestConnectionHopByHop() {
+	file := s.adaptFile("fixtures/headers/connection_hop_by_hop_headers.toml", struct{}{})
+	s.traefikCmd(withConfigFile(file))
 
-	err := cmd.Start()
-	c.Assert(err, checker.IsNil)
-	defer s.killCmd(cmd)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, found := r.Header["X-Forwarded-For"]
+		assert.True(s.T(), found)
+		xHost, found := r.Header["X-Forwarded-Host"]
+		assert.True(s.T(), found)
+		assert.Equal(s.T(), "localhost", xHost[0])
+
+		_, found = r.Header["Foo"]
+		assert.False(s.T(), found)
+		_, found = r.Header["Bar"]
+		assert.False(s.T(), found)
+	})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:9000")
+	require.NoError(s.T(), err)
+
+	ts := &httptest.Server{
+		Listener: listener,
+		Config:   &http.Server{Handler: handler},
+	}
+	ts.Start()
+	defer ts.Close()
+
+	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8000/", nil)
+	require.NoError(s.T(), err)
+	req.Host = "test.localhost"
+	req.Header = http.Header{
+		"Connection":       {"Foo,Bar,X-Forwarded-For,X-Forwarded-Host"},
+		"Foo":              {"bar"},
+		"Bar":              {"foo"},
+		"X-Forwarded-Host": {"localhost"},
+	}
+
+	err = try.Request(req, time.Second, try.StatusCodeIs(http.StatusOK))
+	require.NoError(s.T(), err)
+
+	accessLog, err := os.ReadFile(traefikTestAccessLogFile)
+	require.NoError(s.T(), err)
+
+	assert.Contains(s.T(), string(accessLog), "\"request_Foo\":\"bar\"")
+	assert.NotContains(s.T(), string(accessLog), "\"request_Bar\":\"\"")
+}
+
+func (s *HeadersSuite) TestCorsResponses() {
+	file := s.adaptFile("fixtures/headers/cors.toml", struct{}{})
+	s.traefikCmd(withConfigFile(file))
 
 	backend := startTestServer("9000", http.StatusOK, "")
 	defer backend.Close()
 
-	err = try.GetRequest(backend.URL, 500*time.Millisecond, try.StatusCodeIs(http.StatusOK))
-	c.Assert(err, checker.IsNil)
+	err := try.GetRequest(backend.URL, 500*time.Millisecond, try.StatusCodeIs(http.StatusOK))
+	require.NoError(s.T(), err)
 
 	testCase := []struct {
 		desc           string
@@ -147,30 +189,24 @@ func (s *HeadersSuite) TestCorsResponses(c *check.C) {
 
 	for _, test := range testCase {
 		req, err := http.NewRequest(test.method, "http://127.0.0.1:8000/", nil)
-		c.Assert(err, checker.IsNil)
+		require.NoError(s.T(), err)
 		req.Host = test.reqHost
 		req.Header = test.requestHeaders
 
 		err = try.Request(req, 500*time.Millisecond, try.HasHeaderStruct(test.expected))
-		c.Assert(err, checker.IsNil)
+		require.NoError(s.T(), err)
 	}
 }
 
-func (s *HeadersSuite) TestSecureHeadersResponses(c *check.C) {
-	file := s.adaptFile(c, "fixtures/headers/secure.toml", struct{}{})
-	defer os.Remove(file)
-	cmd, display := s.traefikCmd(withConfigFile(file))
-	defer display(c)
-
-	err := cmd.Start()
-	c.Assert(err, checker.IsNil)
-	defer s.killCmd(cmd)
+func (s *HeadersSuite) TestSecureHeadersResponses() {
+	file := s.adaptFile("fixtures/headers/secure.toml", struct{}{})
+	s.traefikCmd(withConfigFile(file))
 
 	backend := startTestServer("9000", http.StatusOK, "")
 	defer backend.Close()
 
-	err = try.GetRequest(backend.URL, 500*time.Millisecond, try.StatusCodeIs(http.StatusOK))
-	c.Assert(err, checker.IsNil)
+	err := try.GetRequest(backend.URL, 500*time.Millisecond, try.StatusCodeIs(http.StatusOK))
+	require.NoError(s.T(), err)
 
 	testCase := []struct {
 		desc            string
@@ -190,36 +226,30 @@ func (s *HeadersSuite) TestSecureHeadersResponses(c *check.C) {
 
 	for _, test := range testCase {
 		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8000/", nil)
-		c.Assert(err, checker.IsNil)
+		require.NoError(s.T(), err)
 		req.Host = test.reqHost
 
 		err = try.Request(req, 500*time.Millisecond, try.StatusCodeIs(http.StatusOK), try.HasHeaderStruct(test.expected))
-		c.Assert(err, checker.IsNil)
+		require.NoError(s.T(), err)
 
 		req, err = http.NewRequest(http.MethodGet, "http://127.0.0.1:8000/api/rawdata", nil)
-		c.Assert(err, checker.IsNil)
+		require.NoError(s.T(), err)
 		req.Host = test.internalReqHost
 
 		err = try.Request(req, 500*time.Millisecond, try.StatusCodeIs(http.StatusOK), try.HasHeaderStruct(test.expected))
-		c.Assert(err, checker.IsNil)
+		require.NoError(s.T(), err)
 	}
 }
 
-func (s *HeadersSuite) TestMultipleSecureHeadersResponses(c *check.C) {
-	file := s.adaptFile(c, "fixtures/headers/secure_multiple.toml", struct{}{})
-	defer os.Remove(file)
-	cmd, display := s.traefikCmd(withConfigFile(file))
-	defer display(c)
-
-	err := cmd.Start()
-	c.Assert(err, checker.IsNil)
-	defer s.killCmd(cmd)
+func (s *HeadersSuite) TestMultipleSecureHeadersResponses() {
+	file := s.adaptFile("fixtures/headers/secure_multiple.toml", struct{}{})
+	s.traefikCmd(withConfigFile(file))
 
 	backend := startTestServer("9000", http.StatusOK, "")
 	defer backend.Close()
 
-	err = try.GetRequest(backend.URL, 500*time.Millisecond, try.StatusCodeIs(http.StatusOK))
-	c.Assert(err, checker.IsNil)
+	err := try.GetRequest(backend.URL, 500*time.Millisecond, try.StatusCodeIs(http.StatusOK))
+	require.NoError(s.T(), err)
 
 	testCase := []struct {
 		desc     string
@@ -238,10 +268,10 @@ func (s *HeadersSuite) TestMultipleSecureHeadersResponses(c *check.C) {
 
 	for _, test := range testCase {
 		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8000/", nil)
-		c.Assert(err, checker.IsNil)
+		require.NoError(s.T(), err)
 		req.Host = test.reqHost
 
 		err = try.Request(req, 500*time.Millisecond, try.HasHeaderStruct(test.expected))
-		c.Assert(err, checker.IsNil)
+		require.NoError(s.T(), err)
 	}
 }
