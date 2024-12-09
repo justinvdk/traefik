@@ -1,7 +1,7 @@
 name: Build Binaries
 
 on:
-  pull_request:
+  push:
     branches:
       - '*'
     paths-ignore:
@@ -24,21 +24,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: webui/.nvmrc
-          cache: yarn
-          cache-dependency-path: webui/yarn.lock
-
       - name: Build webui
-        working-directory: ./webui
         run: |
-          yarn install
-          yarn build
-
-      - name: Package webui
-        run: |
+          make clean-webui generate-webui
           # Workaround for tar trying to archive the output archive. Must be excluded as well.
           touch traefik.src.tar.gz
           tar czvf traefik.src.tar.gz \
