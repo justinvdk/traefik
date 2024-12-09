@@ -2,7 +2,10 @@ package accesslog
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -20,9 +24,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ptypes "github.com/traefik/paerser/types"
-	"github.com/traefik/traefik/v2/pkg/middlewares/capture"
-	"github.com/traefik/traefik/v2/pkg/types"
+	"github.com/traefik/traefik/v3/pkg/middlewares/capture"
+	"github.com/traefik/traefik/v3/pkg/middlewares/recovery"
+	"github.com/traefik/traefik/v3/pkg/types"
 )
+
+const delta float64 = 1e-10
 
 var (
 	logFileNameSuffix       = "/traefik/logger/test.log"
@@ -71,7 +78,7 @@ func TestLogRotation(t *testing.T) {
 	halfDone := make(chan bool)
 	writeDone := make(chan bool)
 	go func() {
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			handler.ServeHTTP(recorder, req)
 			if i == iterations/2 {
 				halfDone <- true
@@ -159,7 +166,7 @@ func TestLoggerHeaderFields(t *testing.T) {
 			},
 		},
 		{
-			desc:     "with case insensitive match on header name",
+			desc:     "with case-insensitive match on header name",
 			header:   "User-Agent",
 			expected: types.AccessLogKeep,
 			accessLogFields: types.AccessLogFields{
@@ -175,7 +182,6 @@ func TestLoggerHeaderFields(t *testing.T) {
 	}
 
 	for _, test := range testCases {
-		test := test
 		t.Run(test.desc, func(t *testing.T) {
 			logFile, err := os.CreateTemp(t.TempDir(), "*.log")
 			require.NoError(t, err)
@@ -195,7 +201,7 @@ func TestLoggerHeaderFields(t *testing.T) {
 
 			if config.FilePath != "" {
 				_, err = os.Stat(config.FilePath)
-				require.NoError(t, err, fmt.Sprintf("logger should create %s", config.FilePath))
+				require.NoErrorf(t, err, "logger should create %s", config.FilePath)
 			}
 
 			req := &http.Request{
@@ -277,7 +283,7 @@ func assertFloat64(exp float64) func(t *testing.T, actual interface{}) {
 	return func(t *testing.T, actual interface{}) {
 		t.Helper()
 
-		assert.Equal(t, exp, actual)
+		assert.InDelta(t, exp, actual, delta)
 	}
 }
 
@@ -321,7 +327,7 @@ func TestLoggerJSON(t *testing.T) {
 				ServiceURL:                assertString(testServiceName),
 				ClientUsername:            assertString(testUsername),
 				ClientHost:                assertString(testHostname),
-				ClientPort:                assertString(fmt.Sprintf("%d", testPort)),
+				ClientPort:                assertString(strconv.Itoa(testPort)),
 				ClientAddr:                assertString(fmt.Sprintf("%s:%d", testHostname, testPort)),
 				"level":                   assertString("info"),
 				"msg":                     assertString(""),
@@ -361,7 +367,7 @@ func TestLoggerJSON(t *testing.T) {
 				ServiceURL:                assertString(testServiceName),
 				ClientUsername:            assertString(testUsername),
 				ClientHost:                assertString(testHostname),
-				ClientPort:                assertString(fmt.Sprintf("%d", testPort)),
+				ClientPort:                assertString(strconv.Itoa(testPort)),
 				ClientAddr:                assertString(fmt.Sprintf("%s:%d", testHostname, testPort)),
 				"level":                   assertString("info"),
 				"msg":                     assertString(""),
@@ -370,6 +376,7 @@ func TestLoggerJSON(t *testing.T) {
 				Duration:                  assertFloat64NotZero(),
 				Overhead:                  assertFloat64NotZero(),
 				RetryAttempts:             assertFloat64(float64(testRetryAttempts)),
+				TLSClientSubject:          assertString("CN=foobar"),
 				TLSVersion:                assertString("1.3"),
 				TLSCipher:                 assertString("TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"),
 				"time":                    assertNotEmpty(),
@@ -460,10 +467,35 @@ func TestLoggerJSON(t *testing.T) {
 				RequestRefererHeader: assertString(testReferer),
 			},
 		},
+		{
+			desc: "fields and headers with unconventional letter case",
+			config: &types.AccessLog{
+				FilePath: "",
+				Format:   JSONFormat,
+				Fields: &types.AccessLogFields{
+					DefaultMode: "drop",
+					Names: map[string]string{
+						"rEqUeStHoSt": "keep",
+					},
+					Headers: &types.FieldHeaders{
+						DefaultMode: "drop",
+						Names: map[string]string{
+							"ReFeReR": "keep",
+						},
+					},
+				},
+			},
+			expected: map[string]func(t *testing.T, value interface{}){
+				RequestHost:          assertString(testHostname),
+				"level":              assertString("info"),
+				"msg":                assertString(""),
+				"time":               assertNotEmpty(),
+				RequestRefererHeader: assertString(testReferer),
+			},
+		},
 	}
 
 	for _, test := range testCases {
-		test := test
 		t.Run(test.desc, func(t *testing.T) {
 			t.Parallel()
 
@@ -489,6 +521,64 @@ func TestLoggerJSON(t *testing.T) {
 				assertion(t, jsonData[field])
 			}
 		})
+	}
+}
+
+func TestLogger_AbortedRequest(t *testing.T) {
+	expected := map[string]func(t *testing.T, value interface{}){
+		RequestContentSize:             assertFloat64(0),
+		RequestHost:                    assertString(testHostname),
+		RequestAddr:                    assertString(testHostname),
+		RequestMethod:                  assertString(testMethod),
+		RequestPath:                    assertString(""),
+		RequestProtocol:                assertString(testProto),
+		RequestScheme:                  assertString(testScheme),
+		RequestPort:                    assertString("-"),
+		DownstreamStatus:               assertFloat64(float64(200)),
+		DownstreamContentSize:          assertFloat64(float64(40)),
+		RequestRefererHeader:           assertString(testReferer),
+		RequestUserAgentHeader:         assertString(testUserAgent),
+		ServiceURL:                     assertString("http://stream"),
+		ServiceAddr:                    assertString("127.0.0.1"),
+		ServiceName:                    assertString("stream"),
+		ClientUsername:                 assertString(testUsername),
+		ClientHost:                     assertString(testHostname),
+		ClientPort:                     assertString(strconv.Itoa(testPort)),
+		ClientAddr:                     assertString(fmt.Sprintf("%s:%d", testHostname, testPort)),
+		"level":                        assertString("info"),
+		"msg":                          assertString(""),
+		RequestCount:                   assertFloat64NotZero(),
+		Duration:                       assertFloat64NotZero(),
+		Overhead:                       assertFloat64NotZero(),
+		RetryAttempts:                  assertFloat64(float64(0)),
+		"time":                         assertNotEmpty(),
+		StartLocal:                     assertNotEmpty(),
+		StartUTC:                       assertNotEmpty(),
+		"downstream_Content-Type":      assertString("text/plain"),
+		"downstream_Transfer-Encoding": assertString("chunked"),
+		"downstream_Cache-Control":     assertString("no-cache"),
+	}
+
+	config := &types.AccessLog{
+		FilePath: filepath.Join(t.TempDir(), logFileNameSuffix),
+		Format:   JSONFormat,
+	}
+	doLoggingWithAbortedStream(t, config)
+
+	logData, err := os.ReadFile(config.FilePath)
+	require.NoError(t, err)
+
+	jsonData := make(map[string]interface{})
+	err = json.Unmarshal(logData, &jsonData)
+	require.NoError(t, err)
+
+	assert.Equal(t, len(expected), len(jsonData))
+
+	for field, assertion := range expected {
+		assertion(t, jsonData[field])
+		if t.Failed() {
+			return
+		}
 	}
 }
 
@@ -681,7 +771,6 @@ func TestNewLogHandlerOutputStdout(t *testing.T) {
 	}
 
 	for _, test := range testCases {
-		test := test
 		t.Run(test.desc, func(t *testing.T) {
 			// NOTE: It is not possible to run these cases in parallel because we capture Stdout
 
@@ -701,7 +790,7 @@ func assertValidLogData(t *testing.T, expected string, logData []byte) {
 	t.Helper()
 
 	if len(expected) == 0 {
-		assert.Zero(t, len(logData))
+		assert.Empty(t, logData)
 		t.Log(string(logData))
 		return
 	}
@@ -758,7 +847,7 @@ func doLoggingTLSOpt(t *testing.T, config *types.AccessLog, enableTLS bool) {
 
 	if config.FilePath != "" {
 		_, err = os.Stat(config.FilePath)
-		require.NoError(t, err, fmt.Sprintf("logger should create %s", config.FilePath))
+		require.NoErrorf(t, err, "logger should create %s", config.FilePath)
 	}
 
 	req := &http.Request{
@@ -780,6 +869,9 @@ func doLoggingTLSOpt(t *testing.T, config *types.AccessLog, enableTLS bool) {
 		req.TLS = &tls.ConnectionState{
 			Version:     tls.VersionTLS13,
 			CipherSuite: tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			PeerCertificates: []*x509.Certificate{{
+				Subject: pkix.Name{CommonName: "foobar"},
+			}},
 		}
 	}
 
@@ -825,4 +917,90 @@ func logWriterTestHandlerFunc(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	rw.WriteHeader(testStatus)
+}
+
+func doLoggingWithAbortedStream(t *testing.T, config *types.AccessLog) {
+	t.Helper()
+
+	logger, err := NewHandler(config)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := logger.Close()
+		require.NoError(t, err)
+	})
+
+	if config.FilePath != "" {
+		_, err = os.Stat(config.FilePath)
+		require.NoError(t, err, "logger should create "+config.FilePath)
+	}
+
+	reqContext, cancelRequest := context.WithCancel(context.Background())
+
+	req := &http.Request{
+		Header: map[string][]string{
+			"User-Agent": {testUserAgent},
+			"Referer":    {testReferer},
+		},
+		Proto:      testProto,
+		Host:       testHostname,
+		Method:     testMethod,
+		RemoteAddr: fmt.Sprintf("%s:%d", testHostname, testPort),
+		URL: &url.URL{
+			User: url.UserPassword(testUsername, ""),
+		},
+		Body: nil,
+	}
+
+	req = req.WithContext(reqContext)
+
+	chain := alice.New()
+	chain = chain.Append(func(next http.Handler) (http.Handler, error) {
+		return recovery.New(context.Background(), next)
+	})
+	chain = chain.Append(capture.Wrap)
+	chain = chain.Append(WrapHandler(logger))
+
+	service := NewFieldHandler(http.HandlerFunc(streamBackend), ServiceURL, "http://stream", nil)
+	service = NewFieldHandler(service, ServiceAddr, "127.0.0.1", nil)
+	service = NewFieldHandler(service, ServiceName, "stream", AddServiceFields)
+
+	handler, err := chain.Then(service)
+	require.NoError(t, err)
+
+	go func() {
+		time.Sleep(499 * time.Millisecond)
+		cancelRequest()
+	}()
+
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+}
+
+func streamBackend(rw http.ResponseWriter, r *http.Request) {
+	// Get the Flusher to flush the response to the client
+	flusher, ok := rw.(http.Flusher)
+	if !ok {
+		http.Error(rw, "Streaming unsupported!", http.StatusInternalServerError)
+		return
+	}
+
+	// Set the headers for streaming
+	rw.Header().Set("Content-Type", "text/plain")
+	rw.Header().Set("Transfer-Encoding", "chunked")
+	rw.Header().Set("Cache-Control", "no-cache")
+
+	for {
+		time.Sleep(100 * time.Millisecond)
+
+		select {
+		case <-r.Context().Done():
+			panic(http.ErrAbortHandler)
+
+		default:
+			if _, err := fmt.Fprint(rw, "FOOBAR!!!!"); err != nil {
+				http.Error(rw, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }

@@ -1,11 +1,10 @@
 ---
 
-!!! question "Using Traefik for Business Applications?"
+!!! question "Using Traefik OSS in Production? Consider Adding Advanced Capabilities."
 
-    If you are using Traefik in your organization, consider [Traefik Enterprise](https://traefik.io/traefik-enterprise/). You can use it as your:
+    Add API Gateway or API Management capabilities seamlessly to your existing Traefik deployments. 
+    No rip and replace. No learning curve.
 
-    - [API Gateway](https://traefik.io/solutions/api-gateway/)
-    - [Kubernetes Ingress Controller](https://traefik.io/solutions/kubernetes-ingress/)
-    - [Docker Swarm Ingress Controller](https://traefik.io/solutions/docker-swarm-ingress/)
-
-    Traefik Enterprise simplifies the discovery, security, and deployment of APIs and microservices across any environment. See it in action in [this short video walkthrough](https://info.traefik.io/watch-traefikee-demo).
+    - [Explore our API Gateway](https://traefik.io/traefik-hub-api-gateway/)
+    - [Explore our API Management](https://traefik.io/traefik-hub/)
+    - [Get 24/7/365 Commercial Support for Traefik OSS](https://info.traefik.io/request-commercial-support)
