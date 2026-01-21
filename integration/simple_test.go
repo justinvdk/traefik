@@ -3,7 +3,9 @@ package integration
 import (
 	"bufio"
 	"bytes"
+	"crypto"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +26,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"github.com/traefik/traefik/v3/integration/try"
 	"github.com/traefik/traefik/v3/pkg/config/dynamic"
+	"golang.org/x/crypto/ocsp"
 )
 
 // SimpleSuite tests suite.
@@ -711,11 +714,11 @@ func (s *SimpleSuite) TestWithDefaultRuleSyntax() {
 	require.NoError(s.T(), err)
 
 	// router2 has an error because it uses the wrong rule syntax (v3 instead of v2)
-	err = try.GetRequest("http://127.0.0.1:8080/api/http/routers/router2@file", 1*time.Second, try.BodyContains("error while parsing rule QueryRegexp(`foo`, `bar`): unsupported function: QueryRegexp"))
+	err = try.GetRequest("http://127.0.0.1:8080/api/http/routers/router2@file", 1*time.Second, try.BodyContains("parsing rule QueryRegexp(`foo`, `bar`): unsupported function: QueryRegexp"))
 	require.NoError(s.T(), err)
 
 	// router3 has an error because it uses the wrong rule syntax (v2 instead of v3)
-	err = try.GetRequest("http://127.0.0.1:8080/api/http/routers/router3@file", 1*time.Second, try.BodyContains("error while adding rule PathPrefix: unexpected number of parameters; got 2, expected one of [1]"))
+	err = try.GetRequest("http://127.0.0.1:8080/api/http/routers/router3@file", 1*time.Second, try.BodyContains("adding rule PathPrefix: unexpected number of parameters; got 2, expected one of [1]"))
 	require.NoError(s.T(), err)
 }
 
@@ -741,11 +744,11 @@ func (s *SimpleSuite) TestWithoutDefaultRuleSyntax() {
 	require.NoError(s.T(), err)
 
 	// router2 has an error because it uses the wrong rule syntax (v3 instead of v2)
-	err = try.GetRequest("http://127.0.0.1:8080/api/http/routers/router2@file", 1*time.Second, try.BodyContains("error while adding rule PathPrefix: unexpected number of parameters; got 2, expected one of [1]"))
+	err = try.GetRequest("http://127.0.0.1:8080/api/http/routers/router2@file", 1*time.Second, try.BodyContains("adding rule PathPrefix: unexpected number of parameters; got 2, expected one of [1]"))
 	require.NoError(s.T(), err)
 
 	// router2 has an error because it uses the wrong rule syntax (v2 instead of v3)
-	err = try.GetRequest("http://127.0.0.1:8080/api/http/routers/router3@file", 1*time.Second, try.BodyContains("error while parsing rule QueryRegexp(`foo`, `bar`): unsupported function: QueryRegexp"))
+	err = try.GetRequest("http://127.0.0.1:8080/api/http/routers/router3@file", 1*time.Second, try.BodyContains("parsing rule QueryRegexp(`foo`, `bar`): unsupported function: QueryRegexp"))
 	require.NoError(s.T(), err)
 }
 
@@ -880,6 +883,109 @@ func (s *SimpleSuite) TestWRRServer() {
 
 	assert.Equal(s.T(), 3, repartition[whoami1IP])
 	assert.Equal(s.T(), 1, repartition[whoami2IP])
+}
+
+func (s *SimpleSuite) TestLeastTimeServer() {
+	s.createComposeProject("base")
+
+	s.composeUp()
+	defer s.composeDown()
+
+	whoami1IP := s.getComposeServiceIP("whoami1")
+	whoami2IP := s.getComposeServiceIP("whoami2")
+
+	file := s.adaptFile("fixtures/leasttime_server.toml", struct {
+		Server1 string
+		Server2 string
+	}{Server1: "http://" + whoami1IP, Server2: "http://" + whoami2IP})
+
+	s.traefikCmd(withConfigFile(file))
+
+	err := try.GetRequest("http://127.0.0.1:8080/api/http/services", 1000*time.Millisecond, try.BodyContains("service1"))
+	require.NoError(s.T(), err)
+
+	// Verify leasttime strategy is configured
+	err = try.GetRequest("http://127.0.0.1:8080/api/http/services", 1000*time.Millisecond, try.BodyContains("leasttime"))
+	require.NoError(s.T(), err)
+
+	// Make requests and verify both servers respond
+	repartition := map[string]int{}
+	for range 10 {
+		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8000/whoami", nil)
+		require.NoError(s.T(), err)
+
+		response, err := http.DefaultClient.Do(req)
+		require.NoError(s.T(), err)
+		assert.Equal(s.T(), http.StatusOK, response.StatusCode)
+
+		body, err := io.ReadAll(response.Body)
+		require.NoError(s.T(), err)
+
+		if strings.Contains(string(body), whoami1IP) {
+			repartition[whoami1IP]++
+		}
+		if strings.Contains(string(body), whoami2IP) {
+			repartition[whoami2IP]++
+		}
+	}
+
+	// Both servers should have received requests
+	assert.Positive(s.T(), repartition[whoami1IP])
+	assert.Positive(s.T(), repartition[whoami2IP])
+}
+
+func (s *SimpleSuite) TestLeastTimeHeterogeneousPerformance() {
+	// Create test servers with different response times
+	var fastServerCalls, slowServerCalls atomic.Int32
+
+	fastServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		fastServerCalls.Add(1)
+		time.Sleep(10 * time.Millisecond) // Fast server
+		rw.WriteHeader(http.StatusOK)
+		_, _ = rw.Write([]byte("fast-server"))
+	}))
+	defer fastServer.Close()
+
+	slowServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		slowServerCalls.Add(1)
+		time.Sleep(100 * time.Millisecond) // Slow server
+		rw.WriteHeader(http.StatusOK)
+		_, _ = rw.Write([]byte("slow-server"))
+	}))
+	defer slowServer.Close()
+
+	file := s.adaptFile("fixtures/leasttime_server.toml", struct {
+		Server1 string
+		Server2 string
+	}{Server1: fastServer.URL, Server2: slowServer.URL})
+
+	s.traefikCmd(withConfigFile(file))
+
+	err := try.GetRequest("http://127.0.0.1:8080/api/http/services", 1000*time.Millisecond, try.BodyContains("service1"))
+	require.NoError(s.T(), err)
+
+	// Make 20 requests to build up response time statistics
+	for range 20 {
+		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8000/whoami", nil)
+		require.NoError(s.T(), err)
+
+		response, err := http.DefaultClient.Do(req)
+		require.NoError(s.T(), err)
+		assert.Equal(s.T(), http.StatusOK, response.StatusCode)
+		_, _ = io.ReadAll(response.Body)
+		response.Body.Close()
+	}
+
+	// Verify that the fast server received significantly more requests (>70%)
+	fastCalls := fastServerCalls.Load()
+	slowCalls := slowServerCalls.Load()
+	totalCalls := fastCalls + slowCalls
+
+	assert.Equal(s.T(), int32(20), totalCalls)
+
+	// Fast server should get >70% of traffic due to lower response time
+	fastPercentage := float64(fastCalls) / float64(totalCalls) * 100
+	assert.Greater(s.T(), fastPercentage, 70.0)
 }
 
 func (s *SimpleSuite) TestWRR() {
@@ -1212,6 +1318,74 @@ func (s *SimpleSuite) TestMirrorCanceled() {
 	assert.Equal(s.T(), int32(5), countTotal)
 	assert.Equal(s.T(), int32(0), val1)
 	assert.Equal(s.T(), int32(0), val2)
+}
+
+func (s *SimpleSuite) TestHighestRandomWeight() {
+	var count1, count2, count3 int32
+
+	service1 := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		atomic.AddInt32(&count1, 1)
+		rw.WriteHeader(http.StatusOK)
+	}))
+
+	service2 := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		atomic.AddInt32(&count2, 1)
+		rw.WriteHeader(http.StatusOK)
+	}))
+
+	service3 := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		atomic.AddInt32(&count3, 1)
+		rw.WriteHeader(http.StatusOK)
+	}))
+
+	service1Server := service1.URL
+	service2Server := service2.URL
+	service3Server := service3.URL
+
+	file := s.adaptFile("fixtures/highest_random_weight.toml", struct {
+		Service1Server string
+		Service2Server string
+		Service3Server string
+	}{Service1Server: service1Server, Service2Server: service2Server, Service3Server: service3Server})
+
+	s.traefikCmd(withConfigFile(file))
+
+	err := try.GetRequest("http://127.0.0.1:8080/api/http/services", 3*time.Second, try.BodyContains("service1", "service2", "service3", "hrw"))
+	require.NoError(s.T(), err)
+
+	// Make 10 requests from the same client (127.0.0.1) - should all go to the same service
+	client := &http.Client{}
+	for range 10 {
+		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8000/whoami", nil)
+		require.NoError(s.T(), err)
+
+		response, err := client.Do(req)
+		require.NoError(s.T(), err)
+		assert.Equal(s.T(), http.StatusOK, response.StatusCode)
+		response.Body.Close()
+	}
+
+	// Check if all requests went to the same service
+	val1 := atomic.LoadInt32(&count1)
+	val2 := atomic.LoadInt32(&count2)
+	val3 := atomic.LoadInt32(&count3)
+
+	// All requests should have been handled (total should be 10)
+	assert.Equal(s.T(), int32(10), val1+val2+val3)
+
+	// All requests from same remoteAddr (127.0.0.1) should go to exactly one service
+	servicesUsed := 0
+	if val1 > 0 {
+		servicesUsed++
+	}
+	if val2 > 0 {
+		servicesUsed++
+	}
+	if val3 > 0 {
+		servicesUsed++
+	}
+
+	assert.Equal(s.T(), 1, servicesUsed, "All requests from same remoteAddr should go to exactly one service")
 }
 
 func (s *SimpleSuite) TestSecureAPI() {
@@ -1598,6 +1772,132 @@ func (s *SimpleSuite) TestMaxHeaderBytes() {
 	}
 }
 
+func (s *SimpleSuite) TestSimpleOCSP() {
+	defaultCert, err := tls.LoadX509KeyPair("fixtures/ocsp/default.crt", "fixtures/ocsp/default.key")
+	require.NoError(s.T(), err)
+
+	serverCert, err := tls.LoadX509KeyPair("fixtures/ocsp/server.crt", "fixtures/ocsp/server.key")
+	require.NoError(s.T(), err)
+
+	defaultOCSPResponseTmpl := ocsp.Response{
+		SerialNumber: defaultCert.Leaf.SerialNumber,
+		Status:       ocsp.Good,
+		ThisUpdate:   defaultCert.Leaf.NotBefore,
+		NextUpdate:   defaultCert.Leaf.NotAfter,
+	}
+	defaultOCSPResponse, err := ocsp.CreateResponse(defaultCert.Leaf, defaultCert.Leaf, defaultOCSPResponseTmpl, defaultCert.PrivateKey.(crypto.Signer))
+	require.NoError(s.T(), err)
+
+	serverOCSPResponseTmpl := ocsp.Response{
+		SerialNumber: serverCert.Leaf.SerialNumber,
+		Status:       ocsp.Good,
+		ThisUpdate:   serverCert.Leaf.NotBefore,
+		NextUpdate:   serverCert.Leaf.NotAfter,
+	}
+	serverOCSPResponse, err := ocsp.CreateResponse(serverCert.Leaf, serverCert.Leaf, serverOCSPResponseTmpl, serverCert.PrivateKey.(crypto.Signer))
+	require.NoError(s.T(), err)
+
+	responderCalled := make(chan struct{})
+	responder := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		ct := req.Header.Get("Content-Type")
+		assert.Equal(s.T(), "application/ocsp-request", ct)
+
+		reqBytes, err := io.ReadAll(req.Body)
+		require.NoError(s.T(), err)
+
+		ocspReq, err := ocsp.ParseRequest(reqBytes)
+		require.NoError(s.T(), err)
+
+		var ocspResponse []byte
+		switch ocspReq.SerialNumber.String() {
+		case defaultCert.Leaf.SerialNumber.String():
+			ocspResponse = defaultOCSPResponse
+		case serverCert.Leaf.SerialNumber.String():
+			ocspResponse = serverOCSPResponse
+		default:
+			s.T().Fatalf("Unexpected OCSP request for serial number: %s", ocspReq.SerialNumber)
+		}
+
+		rw.Header().Set("Content-Type", "application/ocsp-response")
+
+		_, err = rw.Write(ocspResponse)
+		require.NoError(s.T(), err)
+
+		responderCalled <- struct{}{}
+	}))
+	s.T().Cleanup(responder.Close)
+
+	file := s.adaptFile("fixtures/ocsp/simple.toml", struct {
+		ResponderURL string
+	}{responder.URL})
+
+	s.traefikCmd(withConfigFile(file))
+
+	select {
+	case <-responderCalled:
+	case <-time.After(5 * time.Second):
+		s.T().Fatal("OCSP responder was not called")
+	}
+
+	select {
+	case <-responderCalled:
+	case <-time.After(5 * time.Second):
+		s.T().Fatal("OCSP responder was not called")
+	}
+
+	// Check that the response is stapled.
+
+	// Create a TLS client configuration that checks for OCSP stapling for the default cert.
+	var verifyCallCount int
+	clientConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         "unknown",
+		VerifyConnection: func(state tls.ConnectionState) error {
+			s.T().Helper()
+
+			verifyCallCount++
+			assert.Equal(s.T(), "default.local", state.PeerCertificates[0].Subject.CommonName)
+			assert.Equal(s.T(), defaultOCSPResponse, state.OCSPResponse)
+			return nil
+		},
+	}
+
+	// Connect to the server and verify OCSP stapling.
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", "127.0.0.1:8000", clientConfig)
+	require.NoError(s.T(), err)
+
+	s.T().Cleanup(func() {
+		_ = conn.Close()
+	})
+
+	assert.Equal(s.T(), 1, verifyCallCount)
+
+	// Create a TLS client configuration that checks for OCSP stapling for a cert in the store.
+	verifyCallCount = 0
+	clientConfig = &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         "server.local",
+		VerifyConnection: func(state tls.ConnectionState) error {
+			s.T().Helper()
+
+			verifyCallCount++
+			assert.Equal(s.T(), "server.local", state.PeerCertificates[0].Subject.CommonName)
+			assert.Equal(s.T(), serverOCSPResponse, state.OCSPResponse)
+			return nil
+		},
+	}
+
+	// Connect to the server and verify OCSP stapling.
+	conn, err = tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", "127.0.0.1:8000", clientConfig)
+	require.NoError(s.T(), err)
+
+	s.T().Cleanup(func() {
+		_ = conn.Close()
+	})
+
+	assert.Equal(s.T(), 1, verifyCallCount)
+}
+
 func (s *SimpleSuite) TestSanitizePath() {
 	s.createComposeProject("base")
 
@@ -1606,9 +1906,10 @@ func (s *SimpleSuite) TestSanitizePath() {
 
 	whoami1URL := "http://" + net.JoinHostPort(s.getComposeServiceIP("whoami1"), "80")
 
-	file := s.adaptFile("fixtures/simple_clean_path.toml", struct {
-		Server1 string
-	}{whoami1URL})
+	file := s.adaptFile("fixtures/simple_sanitize_path.toml", struct {
+		Server1           string
+		DefaultRuleSyntax string
+	}{whoami1URL, "v3"})
 
 	s.traefikCmd(withConfigFile(file))
 
@@ -1638,6 +1939,116 @@ func (s *SimpleSuite) TestSanitizePath() {
 		{
 			desc:     "Implicit call to the route with a middleware",
 			request:  "GET /without/../with HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:   "127.0.0.1:8000",
+			expected: http.StatusFound,
+		},
+		{
+			desc:     "Implicit encoded dot dots call to the route with a middleware",
+			request:  "GET /without/%2E%2E/with HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:   "127.0.0.1:8000",
+			expected: http.StatusFound,
+		},
+		{
+			desc:     "Implicit with encoded unreserved character call to the route with a middleware",
+			request:  "GET /%77ith HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:   "127.0.0.1:8000",
+			expected: http.StatusFound,
+		},
+		{
+			desc:     "Explicit call to the route with a middleware, and disable path sanitization",
+			request:  "GET /with HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:   "127.0.0.1:8001",
+			expected: http.StatusFound,
+		},
+		{
+			desc:     "Explicit call to the route without a middleware, and disable path sanitization",
+			request:  "GET /without HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:   "127.0.0.1:8001",
+			expected: http.StatusOK,
+			body:     "GET /without HTTP/1.1",
+		},
+		{
+			desc:    "Implicit call to the route with a middleware, and disable path sanitization",
+			request: "GET /without/../with HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:  "127.0.0.1:8001",
+			// The whoami is redirecting to /with, but the path is not sanitized.
+			expected: http.StatusMovedPermanently,
+		},
+	}
+
+	for _, test := range testCases {
+		conn, err := net.Dial("tcp", test.target)
+		require.NoError(s.T(), err)
+
+		_, err = conn.Write([]byte(test.request))
+		require.NoError(s.T(), err)
+
+		resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+		require.NoError(s.T(), err)
+
+		assert.Equalf(s.T(), test.expected, resp.StatusCode, "%s failed with %d instead of %d", test.desc, resp.StatusCode, test.expected)
+
+		if test.body != "" {
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(s.T(), err)
+			assert.Contains(s.T(), string(body), test.body)
+		}
+	}
+}
+
+func (s *SimpleSuite) TestSanitizePathSyntaxV2() {
+	s.createComposeProject("base")
+
+	s.composeUp()
+	defer s.composeDown()
+
+	whoami1URL := "http://" + net.JoinHostPort(s.getComposeServiceIP("whoami1"), "80")
+
+	file := s.adaptFile("fixtures/simple_sanitize_path.toml", struct {
+		Server1           string
+		DefaultRuleSyntax string
+	}{whoami1URL, "v2"})
+
+	s.traefikCmd(withConfigFile(file))
+
+	err := try.GetRequest("http://127.0.0.1:8080/api/rawdata", 1*time.Second, try.BodyContains("PathPrefix(`/with`)"))
+	require.NoError(s.T(), err)
+
+	testCases := []struct {
+		desc     string
+		request  string
+		target   string
+		body     string
+		expected int
+	}{
+		{
+			desc:     "Explicit call to the route with a middleware",
+			request:  "GET /with HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:   "127.0.0.1:8000",
+			expected: http.StatusFound,
+		},
+		{
+			desc:     "Explicit call to the route without a middleware",
+			request:  "GET /without HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:   "127.0.0.1:8000",
+			expected: http.StatusOK,
+			body:     "GET /without HTTP/1.1",
+		},
+		{
+			desc:     "Implicit call to the route with a middleware",
+			request:  "GET /without/../with HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:   "127.0.0.1:8000",
+			expected: http.StatusFound,
+		},
+		{
+			desc:     "Implicit encoded dot dots call to the route with a middleware",
+			request:  "GET /without/%2E%2E/with HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
+			target:   "127.0.0.1:8000",
+			expected: http.StatusFound,
+		},
+		{
+			desc:     "Implicit with encoded unreserved character call to the route with a middleware",
+			request:  "GET /%77ith HTTP/1.1\r\nHost: other.localhost\r\n\r\n",
 			target:   "127.0.0.1:8000",
 			expected: http.StatusFound,
 		},

@@ -1,7 +1,6 @@
 package kv
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -45,6 +44,7 @@ func Test_buildConfiguration(t *testing.T) {
 		"traefik/http/services/Service01/loadBalancer/healthCheck/path":                              "foobar",
 		"traefik/http/services/Service01/loadBalancer/healthCheck/port":                              "42",
 		"traefik/http/services/Service01/loadBalancer/healthCheck/interval":                          "1s",
+		"traefik/http/services/Service01/loadBalancer/healthCheck/unhealthyinterval":                 "1s",
 		"traefik/http/services/Service01/loadBalancer/healthCheck/timeout":                           "1s",
 		"traefik/http/services/Service01/loadBalancer/healthCheck/hostname":                          "foobar",
 		"traefik/http/services/Service01/loadBalancer/healthCheck/headers/name0":                     "foobar",
@@ -58,6 +58,7 @@ func Test_buildConfiguration(t *testing.T) {
 		"traefik/http/services/Service01/loadBalancer/sticky/cookie/secure":                          "true",
 		"traefik/http/services/Service01/loadBalancer/sticky/cookie/httpOnly":                        "true",
 		"traefik/http/services/Service01/loadBalancer/sticky/cookie/path":                            "foobar",
+		"traefik/http/services/Service01/loadBalancer/strategy":                                      "foobar",
 		"traefik/http/services/Service01/loadBalancer/servers/0/url":                                 "foobar",
 		"traefik/http/services/Service01/loadBalancer/servers/1/url":                                 "foobar",
 		"traefik/http/services/Service02/mirroring/service":                                          "foobar",
@@ -91,6 +92,7 @@ func Test_buildConfiguration(t *testing.T) {
 		"traefik/http/middlewares/Middleware08/forwardAuth/forwardBody":                              "true",
 		"traefik/http/middlewares/Middleware08/forwardAuth/maxBodySize":                              "42",
 		"traefik/http/middlewares/Middleware08/forwardAuth/preserveLocationHeader":                   "true",
+		"traefik/http/middlewares/Middleware08/forwardAuth/preserveRequestMethod":                    "true",
 		"traefik/http/middlewares/Middleware15/redirectScheme/scheme":                                "foobar",
 		"traefik/http/middlewares/Middleware15/redirectScheme/port":                                  "foobar",
 		"traefik/http/middlewares/Middleware15/redirectScheme/permanent":                             "true",
@@ -295,7 +297,7 @@ func Test_buildConfiguration(t *testing.T) {
 		"traefik/tls/certificates/1/stores/1":                                                        "foobar",
 	}))
 
-	cfg, err := provider.buildConfiguration(context.Background())
+	cfg, err := provider.buildConfiguration(t.Context())
 	require.NoError(t, err)
 
 	expected := &dynamic.Configuration{
@@ -446,6 +448,7 @@ func Test_buildConfiguration(t *testing.T) {
 						ForwardBody:            true,
 						MaxBodySize:            pointer(int64(42)),
 						PreserveLocationHeader: true,
+						PreserveRequestMethod:  true,
 					},
 				},
 				"Middleware06": {
@@ -644,6 +647,7 @@ func Test_buildConfiguration(t *testing.T) {
 			Services: map[string]*dynamic.Service{
 				"Service01": {
 					LoadBalancer: &dynamic.ServersLoadBalancer{
+						Strategy: "foobar",
 						Sticky: &dynamic.Sticky{
 							Cookie: &dynamic.Cookie{
 								Name:     "foobar",
@@ -654,23 +658,22 @@ func Test_buildConfiguration(t *testing.T) {
 						},
 						Servers: []dynamic.Server{
 							{
-								URL:    "foobar",
-								Scheme: "http",
+								URL: "foobar",
 							},
 							{
-								URL:    "foobar",
-								Scheme: "http",
+								URL: "foobar",
 							},
 						},
 						HealthCheck: &dynamic.ServerHealthCheck{
-							Scheme:          "foobar",
-							Mode:            "foobar",
-							Path:            "foobar",
-							Port:            42,
-							Interval:        ptypes.Duration(time.Second),
-							Timeout:         ptypes.Duration(time.Second),
-							Hostname:        "foobar",
-							FollowRedirects: pointer(true),
+							Scheme:            "foobar",
+							Mode:              "foobar",
+							Path:              "foobar",
+							Port:              42,
+							Interval:          ptypes.Duration(time.Second),
+							UnhealthyInterval: pointer(ptypes.Duration(time.Second)),
+							Timeout:           ptypes.Duration(time.Second),
+							Hostname:          "foobar",
+							FollowRedirects:   pointer(true),
 							Headers: map[string]string{
 								"name0": "foobar",
 								"name1": "foobar",
@@ -954,7 +957,7 @@ func Test_buildConfiguration_KV_error(t *testing.T) {
 		},
 	}
 
-	cfg, err := provider.buildConfiguration(context.Background())
+	cfg, err := provider.buildConfiguration(t.Context())
 	require.Error(t, err)
 	assert.Nil(t, cfg)
 }
@@ -973,7 +976,7 @@ func TestKvWatchTree(t *testing.T) {
 
 	configChan := make(chan dynamic.Message)
 	go func() {
-		err := provider.watchKv(context.Background(), configChan)
+		err := provider.watchKv(t.Context(), configChan)
 		require.NoError(t, err)
 	}()
 

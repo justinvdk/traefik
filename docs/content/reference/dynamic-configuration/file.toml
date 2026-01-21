@@ -22,8 +22,9 @@
           sans = ["foobar", "foobar"]
       [http.routers.Router0.observability]
         accessLogs = true
-        tracing = true
         metrics = true
+        tracing = true
+        traceVerbosity = "foobar"
     [http.routers.Router1]
       entryPoints = ["foobar", "foobar"]
       middlewares = ["foobar", "foobar"]
@@ -44,8 +45,9 @@
           sans = ["foobar", "foobar"]
       [http.routers.Router1.observability]
         accessLogs = true
-        tracing = true
         metrics = true
+        tracing = true
+        traceVerbosity = "foobar"
   [http.services]
     [http.services.Service01]
       [http.services.Service01.failover]
@@ -53,28 +55,41 @@
         fallback = "foobar"
         [http.services.Service01.failover.healthCheck]
     [http.services.Service02]
-      [http.services.Service02.loadBalancer]
+      [http.services.Service02.highestRandomWeight]
+
+        [[http.services.Service02.highestRandomWeight.services]]
+          name = "foobar"
+          weight = 42
+
+        [[http.services.Service02.highestRandomWeight.services]]
+          name = "foobar"
+          weight = 42
+        [http.services.Service02.highestRandomWeight.healthCheck]
+    [http.services.Service03]
+      [http.services.Service03.loadBalancer]
+        strategy = "foobar"
         passHostHeader = true
         serversTransport = "foobar"
-        [http.services.Service02.loadBalancer.sticky]
-          [http.services.Service02.loadBalancer.sticky.cookie]
+        [http.services.Service03.loadBalancer.sticky]
+          [http.services.Service03.loadBalancer.sticky.cookie]
             name = "foobar"
             secure = true
             httpOnly = true
             sameSite = "foobar"
             maxAge = 42
             path = "foobar"
+            domain = "foobar"
 
-        [[http.services.Service02.loadBalancer.servers]]
+        [[http.services.Service03.loadBalancer.servers]]
           url = "foobar"
           weight = 42
           preservePath = true
 
-        [[http.services.Service02.loadBalancer.servers]]
+        [[http.services.Service03.loadBalancer.servers]]
           url = "foobar"
           weight = 42
           preservePath = true
-        [http.services.Service02.loadBalancer.healthCheck]
+        [http.services.Service03.loadBalancer.healthCheck]
           scheme = "foobar"
           mode = "foobar"
           path = "foobar"
@@ -82,47 +97,52 @@
           status = 42
           port = 42
           interval = "42s"
+          unhealthyInterval = "42s"
           timeout = "42s"
           hostname = "foobar"
           followRedirects = true
-          [http.services.Service02.loadBalancer.healthCheck.headers]
+          [http.services.Service03.loadBalancer.healthCheck.headers]
             name0 = "foobar"
             name1 = "foobar"
-        [http.services.Service02.loadBalancer.responseForwarding]
+        [http.services.Service03.loadBalancer.passiveHealthCheck]
+          failureWindow = "42s"
+          maxFailedAttempts = 42
+        [http.services.Service03.loadBalancer.responseForwarding]
           flushInterval = "42s"
-    [http.services.Service03]
-      [http.services.Service03.mirroring]
+    [http.services.Service04]
+      [http.services.Service04.mirroring]
         service = "foobar"
         mirrorBody = true
         maxBodySize = 42
 
-        [[http.services.Service03.mirroring.mirrors]]
+        [[http.services.Service04.mirroring.mirrors]]
           name = "foobar"
           percent = 42
 
-        [[http.services.Service03.mirroring.mirrors]]
+        [[http.services.Service04.mirroring.mirrors]]
           name = "foobar"
           percent = 42
-        [http.services.Service03.mirroring.healthCheck]
-    [http.services.Service04]
-      [http.services.Service04.weighted]
+        [http.services.Service04.mirroring.healthCheck]
+    [http.services.Service05]
+      [http.services.Service05.weighted]
 
-        [[http.services.Service04.weighted.services]]
+        [[http.services.Service05.weighted.services]]
           name = "foobar"
           weight = 42
 
-        [[http.services.Service04.weighted.services]]
+        [[http.services.Service05.weighted.services]]
           name = "foobar"
           weight = 42
-        [http.services.Service04.weighted.sticky]
-          [http.services.Service04.weighted.sticky.cookie]
+        [http.services.Service05.weighted.sticky]
+          [http.services.Service05.weighted.sticky.cookie]
             name = "foobar"
             secure = true
             httpOnly = true
             sameSite = "foobar"
             maxAge = 42
             path = "foobar"
-        [http.services.Service04.weighted.healthCheck]
+            domain = "foobar"
+        [http.services.Service05.weighted.healthCheck]
   [http.middlewares]
     [http.middlewares.Middleware01]
       [http.middlewares.Middleware01.addPrefix]
@@ -173,6 +193,9 @@
         status = ["foobar", "foobar"]
         service = "foobar"
         query = "foobar"
+        [http.middlewares.Middleware09.errors.statusRewrites]
+          name0 = 42
+          name1 = 42
     [http.middlewares.Middleware10]
       [http.middlewares.Middleware10.forwardAuth]
         address = "foobar"
@@ -185,6 +208,7 @@
         forwardBody = true
         maxBodySize = 42
         preserveLocationHeader = true
+        preserveRequestMethod = true
         [http.middlewares.Middleware10.forwardAuth.tls]
           ca = "foobar"
           cert = "foobar"
@@ -305,6 +329,22 @@
             depth = 42
             excludedIPs = ["foobar", "foobar"]
             ipv6Subnet = 42
+        [http.middlewares.Middleware18.rateLimit.redis]
+          endpoints = ["foobar", "foobar"]
+          username = "foobar"
+          password = "foobar"
+          db = 42
+          poolSize = 42
+          minIdleConns = 42
+          maxActiveConns = 42
+          readTimeout = "42s"
+          writeTimeout = "42s"
+          dialTimeout = "42s"
+          [http.middlewares.Middleware18.rateLimit.redis.tls]
+            ca = "foobar"
+            cert = "foobar"
+            key = "foobar"
+            insecureSkipVerify = true
     [http.middlewares.Middleware19]
       [http.middlewares.Middleware19.redirectRegex]
         regex = "foobar"
@@ -428,16 +468,16 @@
       [tcp.services.TCPService01.loadBalancer]
         serversTransport = "foobar"
         terminationDelay = 42
+
+        [[tcp.services.TCPService01.loadBalancer.servers]]
+          address = "foobar"
+          tls = true
+
+        [[tcp.services.TCPService01.loadBalancer.servers]]
+          address = "foobar"
+          tls = true
         [tcp.services.TCPService01.loadBalancer.proxyProtocol]
           version = 42
-
-        [[tcp.services.TCPService01.loadBalancer.servers]]
-          address = "foobar"
-          tls = true
-
-        [[tcp.services.TCPService01.loadBalancer.servers]]
-          address = "foobar"
-          tls = true
     [tcp.services.TCPService02]
       [tcp.services.TCPService02.weighted]
 
@@ -463,6 +503,8 @@
       dialKeepAlive = "42s"
       dialTimeout = "42s"
       terminationDelay = "42s"
+      [tcp.serversTransports.TCPServersTransport0.proxyProtocol]
+        version = 42
       [tcp.serversTransports.TCPServersTransport0.tls]
         serverName = "foobar"
         insecureSkipVerify = true
@@ -483,6 +525,8 @@
       dialKeepAlive = "42s"
       dialTimeout = "42s"
       terminationDelay = "42s"
+      [tcp.serversTransports.TCPServersTransport1.proxyProtocol]
+        version = 42
       [tcp.serversTransports.TCPServersTransport1.tls]
         serverName = "foobar"
         insecureSkipVerify = true
@@ -547,6 +591,7 @@
       curvePreferences = ["foobar", "foobar"]
       sniStrict = true
       alpnProtocols = ["foobar", "foobar"]
+      disableSessionTickets = true
       preferServerCipherSuites = true
       [tls.options.Options0.clientAuth]
         caFiles = ["foobar", "foobar"]
@@ -558,6 +603,7 @@
       curvePreferences = ["foobar", "foobar"]
       sniStrict = true
       alpnProtocols = ["foobar", "foobar"]
+      disableSessionTickets = true
       preferServerCipherSuites = true
       [tls.options.Options1.clientAuth]
         caFiles = ["foobar", "foobar"]

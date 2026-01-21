@@ -6,7 +6,6 @@ import (
 	"maps"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 	"text/template"
 	"unicode"
@@ -14,7 +13,7 @@ import (
 	"github.com/Masterminds/sprig/v3"
 	"github.com/rs/zerolog/log"
 	"github.com/traefik/traefik/v3/pkg/config/dynamic"
-	"github.com/traefik/traefik/v3/pkg/logs"
+	"github.com/traefik/traefik/v3/pkg/observability/logs"
 	"github.com/traefik/traefik/v3/pkg/tls"
 )
 
@@ -81,7 +80,7 @@ func Merge(ctx context.Context, configurations map[string]*dynamic.Configuration
 	for key := range configurations {
 		sortedKeys = append(sortedKeys, key)
 	}
-	sort.Strings(sortedKeys)
+	slices.Sort(sortedKeys)
 
 	for _, root := range sortedKeys {
 		conf := configurations[root]

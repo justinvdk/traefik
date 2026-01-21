@@ -131,7 +131,8 @@ func (p *Provider) loadGRPCRoute(ctx context.Context, listener gatewayListener, 
 			rule, priority := buildGRPCMatchRule(hostnames, match)
 
 			router := dynamic.Router{
-				RuleSyntax:  "v3",
+				// "default" stands for the default rule syntax in Traefik v3, i.e. the v3 syntax.
+				RuleSyntax:  "default",
 				Rule:        rule,
 				Priority:    priority,
 				EntryPoints: []string{listener.EPName},
@@ -429,7 +430,7 @@ func getGRPCServiceProtocol(portSpec corev1.ServicePort) (string, error) {
 		return schemeH2C, nil
 	}
 
-	switch ap := *portSpec.AppProtocol; ap {
+	switch ap := strings.ToLower(*portSpec.AppProtocol); ap {
 	case appProtocolH2C:
 		return schemeH2C, nil
 	case appProtocolHTTPS:

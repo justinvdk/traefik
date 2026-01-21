@@ -14,8 +14,9 @@
       "tls": {},
       "observability": {
         "accessLogs": true,
+        "metrics": true,
         "tracing": true,
-        "metrics": true
+        "traceVerbosity": "minimal"
       },
       "status": "enabled",
       "using": [
@@ -49,8 +50,9 @@
       },
       "observability": {
         "accessLogs": true,
+        "metrics": true,
         "tracing": true,
-        "metrics": true
+        "traceVerbosity": "minimal"
       },
       "status": "enabled",
       "using": [
@@ -63,12 +65,13 @@
       ],
       "service": "api@internal",
       "rule": "PathPrefix(`/api`)",
-      "ruleSyntax": "v3",
+      "ruleSyntax": "default",
       "priority": 9223372036854775806,
       "observability": {
         "accessLogs": true,
+        "metrics": true,
         "tracing": true,
-        "metrics": true
+        "traceVerbosity": "minimal"
       },
       "status": "enabled",
       "using": [
@@ -85,12 +88,13 @@
       ],
       "service": "dashboard@internal",
       "rule": "PathPrefix(`/`)",
-      "ruleSyntax": "v3",
+      "ruleSyntax": "default",
       "priority": 9223372036854775805,
       "observability": {
         "accessLogs": true,
+        "metrics": true,
         "tracing": true,
-        "metrics": true
+        "traceVerbosity": "minimal"
       },
       "status": "enabled",
       "using": [
@@ -100,7 +104,13 @@
   },
   "middlewares": {
     "compressor@etcd": {
-      "compress": {},
+      "compress": {
+        "encodings": [
+          "gzip",
+          "br",
+          "zstd"
+        ]
+      },
       "status": "enabled",
       "usedBy": [
         "Router0@etcd"
@@ -173,6 +183,7 @@
     "mirror@etcd": {
       "mirroring": {
         "service": "simplesvc",
+        "mirrorBody": true,
         "maxBodySize": -1,
         "mirrors": [
           {
@@ -200,6 +211,7 @@
             "url": "http://10.0.1.1:8889"
           }
         ],
+        "strategy": "wrr",
         "passHostHeader": true,
         "responseForwarding": {
           "flushInterval": "100ms"
@@ -225,6 +237,7 @@
             "url": "http://10.0.1.2:8889"
           }
         ],
+        "strategy": "wrr",
         "passHostHeader": true,
         "responseForwarding": {
           "flushInterval": "100ms"
@@ -242,6 +255,7 @@
             "url": "http://10.0.1.3:8889"
           }
         ],
+        "strategy": "wrr",
         "passHostHeader": true,
         "responseForwarding": {
           "flushInterval": "100ms"

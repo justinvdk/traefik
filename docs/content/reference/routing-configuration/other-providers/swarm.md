@@ -48,7 +48,6 @@ With Docker Swarm, Traefik can leverage labels attached to a service to generate
     then that service is automatically assigned to the router.
 
     ```yaml
-    version: "3"
     services:
       my-container:
         deploy:
@@ -67,7 +66,6 @@ With Docker Swarm, Traefik can leverage labels attached to a service to generate
     Forward requests for `http://example.com` to `http://<private IP of container>:12345`:
 
     ```yaml
-    version: "3"
     services:
       my-container:
         # ...
@@ -93,7 +91,6 @@ With Docker Swarm, Traefik can leverage labels attached to a service to generate
     In this example, requests are forwarded for `http://example-a.com` to `http://<private IP of container>:8000` in addition to `http://example-b.com` forwarding to `http://<private IP of container>:9000`:
 
     ```yaml
-    version: "3"
     services:
       my-container:
         # ...
@@ -119,7 +116,7 @@ With Docker Swarm, Traefik can leverage labels attached to a service to generate
 
 ### General
 
-Traefik creates, for each container, a corresponding [service](../http/load-balancing/service.md) and [router](../http/router/rules-and-priority.md).
+Traefik creates, for each container, a corresponding [service](../http/load-balancing/service.md) and [router](../http/routing/rules-and-priority.md).
 
 The Service automatically gets a server per instance of the container,
 and the router automatically gets a rule defined by `defaultRule` (if no rule for it was defined in labels).
@@ -161,15 +158,20 @@ For example, to change the rule, you could add the label ```traefik.http.routers
 
 ??? info "`traefik.http.routers.<router_name>.rule`"
 
-    See [rule](../http/router/rules-and-priority.md) for more information.
+    See [rule](../http/routing/rules-and-priority.md) for more information.
 
     ```yaml
     - "traefik.http.routers.myrouter.rule=Host(`example.com`)"
     ```
 
 ??? info "`traefik.http.routers.<router_name>.ruleSyntax`"
-    
-    See [ruleSyntax](../http/router/rules-and-priority.md#rulesyntax) for more information.
+
+    !!! warning
+
+        RuleSyntax option is deprecated and will be removed in the next major version.
+        Please do not use this field and rewrite the router rules to use the v3 syntax.
+
+    See [ruleSyntax](../http/routing/rules-and-priority.md#rulesyntax) for more information.
     
     ```yaml
     traefik.http.routers.myrouter.ruleSyntax=v3
@@ -263,7 +265,7 @@ For example, to change the rule, you could add the label ```traefik.http.routers
     
 ??? info "`traefik.http.routers.<router_name>.priority`"
 
-    See [priority](../http/router/rules-and-priority.md#priority-calculation) for more information.
+    See [priority](../http/routing/rules-and-priority.md#priority-calculation) for more information.
 
     ```yaml
     - "traefik.http.routers.myrouter.priority=42"
@@ -344,6 +346,14 @@ you'd add the label `traefik.http.services.<name-of-your-choice>.loadbalancer.pa
 
     ```yaml
     - "traefik.http.services.myservice.loadbalancer.healthcheck.interval=10s"
+    ```
+
+??? info "`traefik.http.services.<service_name>.loadbalancer.healthcheck.unhealthyinterval`"
+
+    See [health check](../http/load-balancing/service.md#health-check) for more information.
+
+    ```yaml
+    - "traefik.http.services.myservice.loadbalancer.healthcheck.unhealthyinterval=10s"
     ```
 
 ??? info "`traefik.http.services.<service_name>.loadbalancer.healthcheck.path`"
@@ -510,14 +520,19 @@ You can declare TCP Routers and/or Services using labels.
 
 ??? info "`traefik.tcp.routers.<router_name>.rule`"
 
-    See [rule](../tcp/router/rules-and-priority.md#rules) for more information.
+    See [rule](../tcp/routing/rules-and-priority.md#rules) for more information.
 
     ```yaml
     - "traefik.tcp.routers.mytcprouter.rule=HostSNI(`example.com`)"
     ```
 
 ??? info "`traefik.tcp.routers.<router_name>.ruleSyntax`"
-    
+
+    !!! warning
+
+        RuleSyntax option is deprecated and will be removed in the next major version.
+        Please do not use this field and rewrite the router rules to use the v3 syntax.
+
     configure the rule syntax to be used for parsing the rule on a per-router basis.
     
     ```yaml
@@ -574,7 +589,7 @@ You can declare TCP Routers and/or Services using labels.
 
 ??? info "`traefik.tcp.routers.<router_name>.tls.passthrough`"
 
-    See [Passthrough](../tcp/tls.md#passthrough) for more information.
+    See [Passthrough](../tcp/tls.md#opt-passthrough) for more information.
 
     ```yaml
     - "traefik.tcp.routers.mytcprouter.tls.passthrough=true"
@@ -582,7 +597,7 @@ You can declare TCP Routers and/or Services using labels.
 
 ??? info "`traefik.tcp.routers.<router_name>.priority`"
 
-    See [priority](../tcp/router/rules-and-priority.md) for more information.
+    See [priority](../tcp/routing/rules-and-priority.md) for more information.
 
     ```yaml
     - "traefik.tcp.routers.myrouter.priority=42"
@@ -604,14 +619,6 @@ You can declare TCP Routers and/or Services using labels.
 
     ```yaml
     - "traefik.tcp.services.mytcpservice.loadbalancer.server.tls=true"
-    ```
-
-??? info "`traefik.tcp.services.<service_name>.loadbalancer.proxyprotocol.version`"
-
-    See [PROXY protocol](../tcp/service.md#proxy-protocol) for more information.
-
-    ```yaml
-    - "traefik.tcp.services.mytcpservice.loadbalancer.proxyprotocol.version=1"
     ```
 
 ??? info "`traefik.tcp.services.<service_name>.loadbalancer.serverstransport`"
@@ -723,7 +730,7 @@ otherwise it will randomly pick one (depending on how docker is returning them).
 #### `traefik.swarm.lbswarm`
 
 ```yaml
-- "traefik.docker.lbswarm=true"
+- "traefik.swarm.lbswarm=true"
 ```
 
 Enables Swarm's inbuilt load balancer (only relevant in Swarm Mode).

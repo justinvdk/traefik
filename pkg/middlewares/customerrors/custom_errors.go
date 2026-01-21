@@ -15,7 +15,6 @@ import (
 	"github.com/traefik/traefik/v3/pkg/middlewares/observability"
 	"github.com/traefik/traefik/v3/pkg/types"
 	"github.com/vulcand/oxy/v2/utils"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // Compile time validation that the response recorder implements http interfaces correctly.
@@ -37,6 +36,12 @@ type customErrors struct {
 	backendHandler http.Handler
 	httpCodeRanges types.HTTPCodeRanges
 	backendQuery   string
+	statusRewrites []statusRewrite
+}
+
+type statusRewrite struct {
+	fromCodes types.HTTPCodeRanges
+	toCode    int
 }
 
 // New creates a new custom error pages middleware.
@@ -53,17 +58,32 @@ func New(ctx context.Context, next http.Handler, config dynamic.ErrorPage, servi
 		return nil, err
 	}
 
+	// Parse StatusRewrites
+	statusRewrites := make([]statusRewrite, 0, len(config.StatusRewrites))
+	for k, v := range config.StatusRewrites {
+		ranges, err := types.NewHTTPCodeRanges([]string{k})
+		if err != nil {
+			return nil, err
+		}
+
+		statusRewrites = append(statusRewrites, statusRewrite{
+			fromCodes: ranges,
+			toCode:    v,
+		})
+	}
+
 	return &customErrors{
 		name:           name,
 		next:           next,
 		backendHandler: backend,
 		httpCodeRanges: httpCodeRanges,
 		backendQuery:   config.Query,
+		statusRewrites: statusRewrites,
 	}, nil
 }
 
-func (c *customErrors) GetTracingInformation() (string, string, trace.SpanKind) {
-	return c.name, typeName, trace.SpanKindInternal
+func (c *customErrors) GetTracingInformation() (string, string) {
+	return c.name, typeName
 }
 
 func (c *customErrors) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -84,13 +104,36 @@ func (c *customErrors) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// check the recorder code against the configured http status code ranges
 	code := catcher.getCode()
-	logger.Debug().Msgf("Caught HTTP Status Code %d, returning error page", code)
+
+	originalCode := code
+
+	// Check if we need to rewrite the status code
+	for _, rsc := range c.statusRewrites {
+		if rsc.fromCodes.Contains(code) {
+			code = rsc.toCode
+			break
+		}
+	}
+
+	if code != originalCode {
+		logger.Debug().Msgf("Caught HTTP Status Code %d (rewritten to %d), returning error page", originalCode, code)
+	} else {
+		logger.Debug().Msgf("Caught HTTP Status Code %d, returning error page", code)
+	}
 
 	var query string
+
+	scheme := "http"
+	if req.TLS != nil {
+		scheme = "https"
+	}
+	orig := &url.URL{Scheme: scheme, Host: req.Host, Path: req.URL.Path, RawPath: req.URL.RawPath, RawQuery: req.URL.RawQuery, Fragment: req.URL.Fragment}
+
 	if len(c.backendQuery) > 0 {
 		query = "/" + strings.TrimPrefix(c.backendQuery, "/")
 		query = strings.ReplaceAll(query, "{status}", strconv.Itoa(code))
-		query = strings.ReplaceAll(query, "{url}", url.QueryEscape(req.URL.String()))
+		query = strings.ReplaceAll(query, "{originalStatus}", strconv.Itoa(originalCode))
+		query = strings.ReplaceAll(query, "{url}", url.QueryEscape(orig.String()))
 	}
 
 	pageReq, err := newRequest("http://" + req.Host + query)

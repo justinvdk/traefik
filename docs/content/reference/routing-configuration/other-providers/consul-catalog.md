@@ -25,7 +25,7 @@ With Consul Catalog, Traefik can leverage tags attached to a service to generate
 
 ### General
 
-Traefik creates, for each consul Catalog service, a corresponding [service](../http/load-balancing/service.md) and [router](../http/router/rules-and-priority.md).
+Traefik creates, for each consul Catalog service, a corresponding [service](../http/load-balancing/service.md) and [router](../http/routing/rules-and-priority.md).
 
 The Service automatically gets a server per instance in this consul Catalog service, and the router gets a default rule attached to it, based on the service name.
 
@@ -37,15 +37,20 @@ For example, to change the rule, you could add the tag ```traefik.http.routers.m
 
 ??? info "`traefik.http.routers.<router_name>.rule`"
     
-    See [rule](../http/router/rules-and-priority.md) for more information.
+    See [rule](../http/routing/rules-and-priority.md) for more information.
     
     ```yaml
     traefik.http.routers.myrouter.rule=Host(`example.com`)
     ```
 
 ??? info "`traefik.http.routers.<router_name>.ruleSyntax`"
-    
-    See [ruleSyntax](../http/router/rules-and-priority.md#rulesyntax) for more information.
+
+    !!! warning
+
+        RuleSyntax option is deprecated and will be removed in the next major version.
+        Please do not use this field and rewrite the router rules to use the v3 syntax.
+
+    See [ruleSyntax](../http/routing/rules-and-priority.md#rulesyntax) for more information.
     
     ```yaml
     traefik.http.routers.myrouter.ruleSyntax=v3
@@ -53,7 +58,7 @@ For example, to change the rule, you could add the tag ```traefik.http.routers.m
 
 ??? info "`traefik.http.routers.<router_name>.priority`"
 
-    See [priority](../http/router/rules-and-priority.md#priority-calculation) for more information.
+    See [priority](../http/routing/rules-and-priority.md#priority-calculation) for more information.
 
     ```yaml
     - "traefik.tcp.routers.mytcprouter.priority=42"
@@ -217,6 +222,14 @@ you'd add the tag `traefik.http.services.{name-of-your-choice}.loadbalancer.pass
     traefik.http.services.myservice.loadbalancer.healthcheck.interval=10
     ```
 
+??? info "`traefik.http.services.<service_name>.loadbalancer.healthcheck.unhealthyinterval`"
+    
+    See [health check](../http/load-balancing/service.md#health-check) for more information.
+    
+    ```yaml
+    traefik.http.services.myservice.loadbalancer.healthcheck.unhealthyinterval=10
+    ```
+
 ??? info "`traefik.http.services.<service_name>.loadbalancer.healthcheck.path`"
     
     See [health check](../http/load-balancing/service.md#health-check) for more information.
@@ -372,14 +385,19 @@ You can declare TCP Routers, Middlewares and/or Services using tags.
 
 ??? info "`traefik.tcp.routers.<router_name>.rule`"
     
-    See [rule](../tcp/router/rules-and-priority.md#rules) for more information.
+    See [rule](../tcp/routing/rules-and-priority.md#rules) for more information.
     
     ```yaml
     traefik.tcp.routers.mytcprouter.rule=HostSNI(`example.com`)
     ```
 
 ??? info "`traefik.tcp.routers.<router_name>.ruleSyntax`"
-    
+
+    !!! warning
+
+        RuleSyntax option is deprecated and will be removed in the next major version.
+        Please do not use this field and rewrite the router rules to use the v3 syntax.
+
     configure the rule syntax to be used for parsing the rule on a per-router basis.
     
     ```yaml
@@ -387,7 +405,7 @@ You can declare TCP Routers, Middlewares and/or Services using tags.
     ```
 
 ??? info "`traefik.tcp.routers.<router_name>.priority`"
-    See [priority](../tcp/router/rules-and-priority.md#priority) for more information.
+    See [priority](../tcp/routing/rules-and-priority.md#priority-calculation) for more information.
     ```yaml
     - "traefik.tcp.routers.mytcprouter.priority=42"
     ```
@@ -442,7 +460,7 @@ You can declare TCP Routers, Middlewares and/or Services using tags.
 
 ??? info "`traefik.tcp.routers.<router_name>.tls.passthrough`"
     
-    See [Passthrough](../tcp/tls.md#passthrough) for more information.
+    See [Passthrough](../tcp/tls.md#opt-passthrough) for more information.
     
     ```yaml
     traefik.tcp.routers.mytcprouter.tls.passthrough=true
@@ -465,14 +483,6 @@ You can declare TCP Routers, Middlewares and/or Services using tags.
     
     ```yaml
     traefik.tcp.services.mytcpservice.loadbalancer.server.tls=true
-    ```
-
-??? info "`traefik.tcp.services.<service_name>.loadbalancer.proxyprotocol.version`"
-        
-    See [PROXY protocol](../tcp/service.md#proxy-protocol) for more information.
-    
-    ```yaml
-    traefik.tcp.services.mytcpservice.loadbalancer.proxyprotocol.version=1
     ```
 
 ??? info "`traefik.tcp.services.<service_name>.loadbalancer.serverstransport`"

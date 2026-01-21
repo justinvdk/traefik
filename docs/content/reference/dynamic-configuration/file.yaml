@@ -27,8 +27,9 @@ http:
               - foobar
       observability:
         accessLogs: true
-        tracing: true
         metrics: true
+        tracing: true
+        traceVerbosity: foobar
     Router1:
       entryPoints:
         - foobar
@@ -54,8 +55,9 @@ http:
               - foobar
       observability:
         accessLogs: true
-        tracing: true
         metrics: true
+        tracing: true
+        traceVerbosity: foobar
   services:
     Service01:
       failover:
@@ -63,6 +65,14 @@ http:
         fallback: foobar
         healthCheck: {}
     Service02:
+      highestRandomWeight:
+        services:
+          - name: foobar
+            weight: 42
+          - name: foobar
+            weight: 42
+        healthCheck: {}
+    Service03:
       loadBalancer:
         sticky:
           cookie:
@@ -72,6 +82,7 @@ http:
             sameSite: foobar
             maxAge: 42
             path: foobar
+            domain: foobar
         servers:
           - url: foobar
             weight: 42
@@ -79,6 +90,7 @@ http:
           - url: foobar
             weight: 42
             preservePath: true
+        strategy: foobar
         healthCheck:
           scheme: foobar
           mode: foobar
@@ -87,17 +99,21 @@ http:
           status: 42
           port: 42
           interval: 42s
+          unhealthyInterval: 42s
           timeout: 42s
           hostname: foobar
           followRedirects: true
           headers:
             name0: foobar
             name1: foobar
+        passiveHealthCheck:
+          failureWindow: 42s
+          maxFailedAttempts: 42
         passHostHeader: true
         responseForwarding:
           flushInterval: 42s
         serversTransport: foobar
-    Service03:
+    Service04:
       mirroring:
         service: foobar
         mirrorBody: true
@@ -108,7 +124,7 @@ http:
           - name: foobar
             percent: 42
         healthCheck: {}
-    Service04:
+    Service05:
       weighted:
         services:
           - name: foobar
@@ -123,6 +139,7 @@ http:
             sameSite: foobar
             maxAge: 42
             path: foobar
+            domain: foobar
         healthCheck: {}
   middlewares:
     Middleware01:
@@ -186,6 +203,9 @@ http:
         status:
           - foobar
           - foobar
+        statusRewrites:
+          name0: 42
+          name1: 42
         service: foobar
         query: foobar
     Middleware10:
@@ -212,6 +232,7 @@ http:
         forwardBody: true
         maxBodySize: 42
         preserveLocationHeader: true
+        preserveRequestMethod: true
     Middleware11:
       grpcWeb:
         allowOrigins:
@@ -354,6 +375,24 @@ http:
             ipv6Subnet: 42
           requestHeaderName: foobar
           requestHost: true
+        redis:
+          endpoints:
+            - foobar
+            - foobar
+          tls:
+            ca: foobar
+            cert: foobar
+            key: foobar
+            insecureSkipVerify: true
+          username: foobar
+          password: foobar
+          db: 42
+          poolSize: 42
+          minIdleConns: 42
+          maxActiveConns: 42
+          readTimeout: 42s
+          writeTimeout: 42s
+          dialTimeout: 42s
     Middleware19:
       redirectRegex:
         regex: foobar
@@ -490,14 +529,14 @@ tcp:
   services:
     TCPService01:
       loadBalancer:
-        proxyProtocol:
-          version: 42
         servers:
           - address: foobar
             tls: true
           - address: foobar
             tls: true
         serversTransport: foobar
+        proxyProtocol:
+          version: 42
         terminationDelay: 42
     TCPService02:
       weighted:
@@ -524,6 +563,8 @@ tcp:
     TCPServersTransport0:
       dialKeepAlive: 42s
       dialTimeout: 42s
+      proxyProtocol:
+        version: 42
       terminationDelay: 42s
       tls:
         serverName: foobar
@@ -545,6 +586,8 @@ tcp:
     TCPServersTransport1:
       dialKeepAlive: 42s
       dialTimeout: 42s
+      proxyProtocol:
+        version: 42
       terminationDelay: 42s
       tls:
         serverName: foobar
@@ -619,6 +662,7 @@ tls:
       alpnProtocols:
         - foobar
         - foobar
+      disableSessionTickets: true
       preferServerCipherSuites: true
     Options1:
       minVersion: foobar
@@ -638,6 +682,7 @@ tls:
       alpnProtocols:
         - foobar
         - foobar
+      disableSessionTickets: true
       preferServerCipherSuites: true
   stores:
     Store0:

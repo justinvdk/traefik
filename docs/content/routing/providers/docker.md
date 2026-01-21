@@ -42,7 +42,6 @@ With Docker, Traefik can leverage labels attached to a container to generate rou
     Attaching labels to containers (in your docker compose file)
 
     ```yaml
-    version: "3"
     services:
       my-container:
         # ...
@@ -55,7 +54,6 @@ With Docker, Traefik can leverage labels attached to a container to generate rou
     Forward requests for `http://example.com` to `http://<private IP of container>:12345`:
 
     ```yaml
-    version: "3"
     services:
       my-container:
         # ...
@@ -78,7 +76,6 @@ With Docker, Traefik can leverage labels attached to a container to generate rou
     In this example, requests are forwarded for `http://example-a.com` to `http://<private IP of container>:8000` in addition to `http://example-b.com` forwarding to `http://<private IP of container>:9000`:
 
     ```yaml
-    version: "3"
     services:
       my-container:
         # ...
@@ -96,7 +93,7 @@ With Docker, Traefik can leverage labels attached to a container to generate rou
 !!! info "Labels"
 
     - Labels are case-insensitive.
-    - The complete list of labels can be found in [the reference page](../../reference/dynamic-configuration/docker.md).
+    - The complete list of labels can be found in [the reference page](../../reference/routing-configuration/other-providers/docker.md).
 
 ### General
 
@@ -283,6 +280,15 @@ you'd add the label `traefik.http.services.<name-of-your-choice>.loadbalancer.pa
     - "traefik.http.services.myservice.loadbalancer.server.scheme=http"
     ```
 
+??? info "`traefik.http.services.<service_name>.loadbalancer.server.url`"
+
+    Defines the service URL.
+    This option cannot be used in combination with `port` or `scheme` definition.
+
+    ```yaml
+    - "traefik.http.services.myservice.loadbalancer.server.url=http://foobar:8080"
+    ```
+
 ??? info "`traefik.http.services.<service_name>.loadbalancer.serverstransport`"
 
     Allows to reference a ServersTransport resource that is defined either with the File provider or the Kubernetes CRD one.
@@ -322,6 +328,14 @@ you'd add the label `traefik.http.services.<name-of-your-choice>.loadbalancer.pa
 
     ```yaml
     - "traefik.http.services.myservice.loadbalancer.healthcheck.interval=10s"
+    ```
+
+??? info "`traefik.http.services.<service_name>.loadbalancer.healthcheck.unhealthyinterval`"
+
+    See [health check](../services/index.md#health-check) for more information.
+
+    ```yaml
+    - "traefik.http.services.myservice.loadbalancer.healthcheck.unhealthyinterval=10s"
     ```
 
 ??? info "`traefik.http.services.<service_name>.loadbalancer.healthcheck.path`"
@@ -428,6 +442,14 @@ you'd add the label `traefik.http.services.<name-of-your-choice>.loadbalancer.pa
     - "traefik.http.services.myservice.loadbalancer.sticky.cookie.samesite=none"
     ```
 
+??? info "`traefik.http.services.<service_name>.loadbalancer.sticky.cookie.domain`"
+
+    See [sticky sessions](../services/index.md#sticky-sessions) for more information.
+
+    ```yaml
+    - "traefik.http.services.myservice.loadbalancer.sticky.cookie.domain=foo.com"
+    ```
+
 ??? info "`traefik.http.services.<service_name>.loadbalancer.sticky.cookie.maxage`"
 
     See [sticky sessions](../services/index.md#sticky-sessions) for more information.
@@ -442,6 +464,14 @@ you'd add the label `traefik.http.services.<name-of-your-choice>.loadbalancer.pa
 
     ```yaml
     - "traefik.http.services.myservice.loadbalancer.responseforwarding.flushinterval=10"
+    ```
+
+??? info "`traefik.http.services.<service_name>.loadbalancer.strategy`"
+
+    See [load balancing strategy](../services/index.md#load-balancing-strategy) for more information.
+
+    ```yaml
+    - "traefik.http.services.myservice.loadbalancer.strategy=p2c"
     ```
 
 ### Middleware

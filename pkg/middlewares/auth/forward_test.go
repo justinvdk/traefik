@@ -11,12 +11,15 @@ import (
 	"net/url"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/traefik/traefik/v3/pkg/config/dynamic"
+	"github.com/traefik/traefik/v3/pkg/middlewares/observability"
+	"github.com/traefik/traefik/v3/pkg/observability/tracing"
+	"github.com/traefik/traefik/v3/pkg/proxy/httputil"
 	"github.com/traefik/traefik/v3/pkg/testhelpers"
-	"github.com/traefik/traefik/v3/pkg/tracing"
 	"github.com/vulcand/oxy/v2/forward"
 	"go.opentelemetry.io/contrib/propagators/autoprop"
 	"go.opentelemetry.io/otel"
@@ -37,7 +40,7 @@ func TestForwardAuthFail(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	middleware, err := NewForward(context.Background(), next, dynamic.ForwardAuth{
+	middleware, err := NewForward(t.Context(), next, dynamic.ForwardAuth{
 		Address: server.URL,
 	}, "authTest")
 	require.NoError(t, err)
@@ -90,7 +93,7 @@ func TestForwardAuthSuccess(t *testing.T) {
 		AuthResponseHeadersRegex: "^Foo-",
 		AddAuthCookiesToResponse: []string{"authCookie"},
 	}
-	middleware, err := NewForward(context.Background(), next, auth, "authTest")
+	middleware, err := NewForward(t.Context(), next, auth, "authTest")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(middleware)
@@ -135,7 +138,7 @@ func TestForwardAuthForwardBody(t *testing.T) {
 	maxBodySize := int64(len(data))
 	auth := dynamic.ForwardAuth{Address: server.URL, ForwardBody: true, MaxBodySize: &maxBodySize}
 
-	middleware, err := NewForward(context.Background(), next, auth, "authTest")
+	middleware, err := NewForward(t.Context(), next, auth, "authTest")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(middleware)
@@ -170,7 +173,7 @@ func TestForwardAuthForwardBodyEmptyBody(t *testing.T) {
 
 	auth := dynamic.ForwardAuth{Address: server.URL, ForwardBody: true}
 
-	middleware, err := NewForward(context.Background(), next, auth, "authTest")
+	middleware, err := NewForward(t.Context(), next, auth, "authTest")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(middleware)
@@ -208,7 +211,7 @@ func TestForwardAuthForwardBodySizeLimit(t *testing.T) {
 	maxBodySize := int64(len(data)) - 1
 	auth := dynamic.ForwardAuth{Address: server.URL, ForwardBody: true, MaxBodySize: &maxBodySize}
 
-	middleware, err := NewForward(context.Background(), next, auth, "authTest")
+	middleware, err := NewForward(t.Context(), next, auth, "authTest")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(middleware)
@@ -245,7 +248,7 @@ func TestForwardAuthNotForwardBody(t *testing.T) {
 
 	auth := dynamic.ForwardAuth{Address: server.URL}
 
-	middleware, err := NewForward(context.Background(), next, auth, "authTest")
+	middleware, err := NewForward(t.Context(), next, auth, "authTest")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(middleware)
@@ -273,7 +276,7 @@ func TestForwardAuthRedirect(t *testing.T) {
 
 	auth := dynamic.ForwardAuth{Address: authTs.URL}
 
-	authMiddleware, err := NewForward(context.Background(), next, auth, "authTest")
+	authMiddleware, err := NewForward(t.Context(), next, auth, "authTest")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(authMiddleware)
@@ -324,7 +327,7 @@ func TestForwardAuthRemoveHopByHopHeaders(t *testing.T) {
 
 	auth := dynamic.ForwardAuth{Address: authTs.URL}
 
-	authMiddleware, err := NewForward(context.Background(), next, auth, "authTest")
+	authMiddleware, err := NewForward(t.Context(), next, auth, "authTest")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(authMiddleware)
@@ -370,7 +373,7 @@ func TestForwardAuthFailResponseHeaders(t *testing.T) {
 	auth := dynamic.ForwardAuth{
 		Address: authTs.URL,
 	}
-	authMiddleware, err := NewForward(context.Background(), next, auth, "authTest")
+	authMiddleware, err := NewForward(t.Context(), next, auth, "authTest")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(authMiddleware)
@@ -406,6 +409,75 @@ func TestForwardAuthFailResponseHeaders(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "Forbidden\n", string(body))
+}
+
+func TestForwardAuthClientClosedRequest(t *testing.T) {
+	requestStarted := make(chan struct{})
+	requestCancelled := make(chan struct{})
+	responseComplete := make(chan struct{})
+
+	authTs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(requestStarted)
+		<-requestCancelled
+	}))
+	t.Cleanup(authTs.Close)
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// next should not be called.
+		t.Fail()
+	})
+
+	auth := dynamic.ForwardAuth{
+		Address: authTs.URL,
+	}
+	authMiddleware, err := NewForward(t.Context(), next, auth, "authTest")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	req := httptest.NewRequestWithContext(ctx, "GET", "http://foo", http.NoBody)
+
+	recorder := httptest.NewRecorder()
+	go func() {
+		authMiddleware.ServeHTTP(recorder, req)
+		close(responseComplete)
+	}()
+
+	<-requestStarted
+
+	cancel()
+	close(requestCancelled)
+
+	<-responseComplete
+
+	assert.Equal(t, httputil.StatusClientClosedRequest, recorder.Result().StatusCode)
+}
+
+func TestForwardAuthForwardError(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// next should not be called.
+		t.Fail()
+	})
+
+	auth := dynamic.ForwardAuth{
+		Address: "http://non-existing-server",
+	}
+	authMiddleware, err := NewForward(t.Context(), next, auth, "authTest")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Microsecond)
+	defer cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "http://foo", nil)
+
+	recorder := httptest.NewRecorder()
+	responseComplete := make(chan struct{})
+	go func() {
+		authMiddleware.ServeHTTP(recorder, req)
+		close(responseComplete)
+	}()
+
+	<-responseComplete
+
+	assert.Equal(t, http.StatusInternalServerError, recorder.Result().StatusCode)
 }
 
 func Test_writeHeader(t *testing.T) {
@@ -682,8 +754,12 @@ func TestForwardAuthTracing(t *testing.T) {
 				Address:            server.URL,
 				AuthRequestHeaders: []string{"X-Foo"},
 			}
-			next, err := NewForward(context.Background(), next, auth, "authTest")
+			next, err := NewForward(t.Context(), next, auth, "authTest")
 			require.NoError(t, err)
+
+			next = observability.WithObservabilityHandler(next, observability.Observability{
+				TracingEnabled: true,
+			})
 
 			req := httptest.NewRequest(http.MethodGet, "http://www.test.com/search?q=Opentelemetry", nil)
 			req.RemoteAddr = "10.0.0.1:1234"
@@ -725,7 +801,7 @@ func TestForwardAuthPreserveLocationHeader(t *testing.T) {
 		Address:                server.URL,
 		PreserveLocationHeader: true,
 	}
-	middleware, err := NewForward(context.Background(), next, auth, "authTest")
+	middleware, err := NewForward(t.Context(), next, auth, "authTest")
 	require.NoError(t, err)
 
 	ts := httptest.NewServer(middleware)
@@ -737,6 +813,63 @@ func TestForwardAuthPreserveLocationHeader(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, res.StatusCode)
 	assert.Equal(t, relativeURL, res.Header.Get("Location"))
+}
+
+func TestForwardAuthPreserveRequestMethod(t *testing.T) {
+	testCases := []struct {
+		name                          string
+		preserveRequestMethod         bool
+		originalReqMethod             string
+		expectedReqMethodInAuthServer string
+	}{
+		{
+			name:                          "preserve request method",
+			preserveRequestMethod:         true,
+			originalReqMethod:             http.MethodPost,
+			expectedReqMethodInAuthServer: http.MethodPost,
+		},
+		{
+			name:                          "do not preserve request method",
+			preserveRequestMethod:         false,
+			originalReqMethod:             http.MethodPost,
+			expectedReqMethodInAuthServer: http.MethodGet,
+		},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			reqReachesAuthServer := false
+			authServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+				reqReachesAuthServer = true
+				assert.Equal(t, test.expectedReqMethodInAuthServer, req.Method)
+			}))
+			t.Cleanup(authServer.Close)
+
+			reqReachesNextServer := false
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reqReachesNextServer = true
+				assert.Equal(t, test.originalReqMethod, r.Method)
+			})
+
+			auth := dynamic.ForwardAuth{
+				Address:               authServer.URL,
+				PreserveRequestMethod: test.preserveRequestMethod,
+			}
+
+			middleware, err := NewForward(t.Context(), next, auth, "authTest")
+			require.NoError(t, err)
+
+			ts := httptest.NewServer(middleware)
+			t.Cleanup(ts.Close)
+
+			req := testhelpers.MustNewRequest(test.originalReqMethod, ts.URL, nil)
+			res, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+
+			assert.Equal(t, http.StatusOK, res.StatusCode)
+			assert.True(t, reqReachesAuthServer)
+			assert.True(t, reqReachesNextServer)
+		})
+	}
 }
 
 type mockTracer struct {

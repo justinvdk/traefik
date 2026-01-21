@@ -8,8 +8,6 @@ description: "In Traefik Proxy, the HTTP ForwardAuth middleware delegates authen
 Using an External Service to Forward Authentication
 {: .subtitle }
 
-![AuthForward](../../assets/img/middleware/authforward.png)
-
 The ForwardAuth middleware delegates authentication to an external service.
 If the service answers with a 2XX code, access is granted, and the original request is performed.
 Otherwise, the response from the authentication server is returned.
@@ -60,11 +58,11 @@ The following request properties are provided to the forward-auth target endpoin
 
 | Property          | Forward-Request Header |
 |-------------------|------------------------|
-| HTTP Method       | X-Forwarded-Method     |
-| Protocol          | X-Forwarded-Proto      |
-| Host              | X-Forwarded-Host       |
-| Request URI       | X-Forwarded-Uri        |
-| Source IP-Address | X-Forwarded-For        |
+| HTTP Method       | `X-Forwarded-Method`   |
+| Protocol          | `X-Forwarded-Proto`    |
+| Host              | `X-Forwarded-Host`     |
+| Request URI       | `X-Forwarded-Uri`      |
+| Source IP-Address | `X-Forwarded-For`      |
 
 ## Configuration Options
 
@@ -746,5 +744,45 @@ http:
   preserveLocationHeader = true
 ```
 
+### `preserveRequestMethod`
+
+_Optional, Default=false_
+
+`preserveRequestMethod` defines whether to preserve the original request method while forwarding the request to the authentication server. By default, when this option is set to `false`, incoming requests are always forwarded as `GET` requests to the authentication server.
+
+```yaml tab="Docker & Swarm"
+labels:
+  - "traefik.http.middlewares.test-auth.forwardauth.preserveRequestMethod=true"
+```
+
+```yaml tab="Kubernetes"
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: test-auth
+spec:
+  forwardAuth:
+    # ...
+    preserveRequestMethod: true
+```
+
+```json tab="Consul Catalog"
+- "traefik.http.middlewares.test-auth.forwardauth.preserveRequestMethod=true"
+```
+
+```yaml tab="File (YAML)"
+http:
+  middlewares:
+    test-auth:
+      forwardAuth:
+        # ...
+        preserveRequestMethod: true
+```
+
+```toml tab="File (TOML)"
+[http.middlewares.test-auth.forwardAuth]
+  # ...
+  preserveRequestMethod = true
+```
 
 {!traefik-for-business-applications.md!}

@@ -10,9 +10,11 @@ import (
 	"net/textproto"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ptypes "github.com/traefik/paerser/types"
 	"github.com/traefik/traefik/v3/pkg/config/dynamic"
 	"github.com/traefik/traefik/v3/pkg/config/runtime"
 	"github.com/traefik/traefik/v3/pkg/proxy/httputil"
@@ -38,6 +40,7 @@ func TestGetLoadBalancer(t *testing.T) {
 			desc:        "Fails when provided an invalid URL",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
+				Strategy: dynamic.BalancerStrategyWRR,
 				Servers: []dynamic.Server{
 					{
 						URL: ":",
@@ -50,7 +53,9 @@ func TestGetLoadBalancer(t *testing.T) {
 		{
 			desc:        "Succeeds when there are no servers",
 			serviceName: "test",
-			service:     &dynamic.ServersLoadBalancer{},
+			service: &dynamic.ServersLoadBalancer{
+				Strategy: dynamic.BalancerStrategyWRR,
+			},
 			fwd:         &forwarderMock{},
 			expectError: false,
 		},
@@ -58,10 +63,38 @@ func TestGetLoadBalancer(t *testing.T) {
 			desc:        "Succeeds when sticky.cookie is set",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
-				Sticky: &dynamic.Sticky{Cookie: &dynamic.Cookie{}},
+				Strategy: dynamic.BalancerStrategyWRR,
+				Sticky:   &dynamic.Sticky{Cookie: &dynamic.Cookie{}},
 			},
 			fwd:         &forwarderMock{},
 			expectError: false,
+		},
+		{
+			desc:        "Succeeds when passive health checker is set",
+			serviceName: "test",
+			service: &dynamic.ServersLoadBalancer{
+				Strategy: dynamic.BalancerStrategyWRR,
+				PassiveHealthCheck: &dynamic.PassiveServerHealthCheck{
+					FailureWindow:     ptypes.Duration(30 * time.Second),
+					MaxFailedAttempts: 3,
+				},
+			},
+			fwd:         &forwarderMock{},
+			expectError: false,
+		},
+		{
+			desc:        "Fails when unsupported strategy is set",
+			serviceName: "test",
+			service: &dynamic.ServersLoadBalancer{
+				Strategy: "invalid",
+				Servers: []dynamic.Server{
+					{
+						URL: "http://localhost:8080",
+					},
+				},
+			},
+			fwd:         &forwarderMock{},
+			expectError: true,
 		},
 	}
 
@@ -70,7 +103,7 @@ func TestGetLoadBalancer(t *testing.T) {
 			t.Parallel()
 
 			serviceInfo := &runtime.ServiceInfo{Service: &dynamic.Service{LoadBalancer: test.service}}
-			handler, err := sm.getLoadBalancerServiceHandler(context.Background(), test.serviceName, serviceInfo)
+			handler, err := sm.getLoadBalancerServiceHandler(t.Context(), test.serviceName, serviceInfo)
 			if test.expectError {
 				require.Error(t, err)
 				assert.Nil(t, handler)
@@ -140,7 +173,8 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 			desc:        "Load balances between the two servers",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
-				PassHostHeader: boolPtr(true),
+				Strategy:       dynamic.BalancerStrategyWRR,
+				PassHostHeader: pointer(true),
 				Servers: []dynamic.Server{
 					{
 						URL: server1.URL,
@@ -165,6 +199,7 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 			desc:        "StatusBadGateway when the server is not reachable",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
+				Strategy: dynamic.BalancerStrategyWRR,
 				Servers: []dynamic.Server{
 					{
 						URL: "http://foo",
@@ -181,7 +216,8 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 			desc:        "ServiceUnavailable when no servers are available",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
-				Servers: []dynamic.Server{},
+				Strategy: dynamic.BalancerStrategyWRR,
+				Servers:  []dynamic.Server{},
 			},
 			expected: []ExpectedResult{
 				{
@@ -193,7 +229,8 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 			desc:        "Always call the same server when sticky.cookie is true",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
-				Sticky: &dynamic.Sticky{Cookie: &dynamic.Cookie{}},
+				Strategy: dynamic.BalancerStrategyWRR,
+				Sticky:   &dynamic.Sticky{Cookie: &dynamic.Cookie{}},
 				Servers: []dynamic.Server{
 					{
 						URL: server1.URL,
@@ -216,7 +253,8 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 			desc:        "Sticky Cookie's options set correctly",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
-				Sticky: &dynamic.Sticky{Cookie: &dynamic.Cookie{HTTPOnly: true, Secure: true}},
+				Strategy: dynamic.BalancerStrategyWRR,
+				Sticky:   &dynamic.Sticky{Cookie: &dynamic.Cookie{HTTPOnly: true, Secure: true}},
 				Servers: []dynamic.Server{
 					{
 						URL: server1.URL,
@@ -236,6 +274,7 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 			desc:        "PassHost passes the host instead of the IP",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
+				Strategy:       dynamic.BalancerStrategyWRR,
 				Sticky:         &dynamic.Sticky{Cookie: &dynamic.Cookie{}},
 				PassHostHeader: pointer(true),
 				Servers: []dynamic.Server{
@@ -255,6 +294,7 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 			desc:        "PassHost doesn't pass the host instead of the IP",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
+				Strategy:       dynamic.BalancerStrategyWRR,
 				PassHostHeader: pointer(false),
 				Sticky:         &dynamic.Sticky{Cookie: &dynamic.Cookie{}},
 				Servers: []dynamic.Server{
@@ -274,6 +314,7 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 			desc:        "No user-agent",
 			serviceName: "test",
 			service: &dynamic.ServersLoadBalancer{
+				Strategy: dynamic.BalancerStrategyWRR,
 				Servers: []dynamic.Server{
 					{
 						URL: hasNoUserAgent.URL,
@@ -291,6 +332,7 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 			serviceName: "test",
 			userAgent:   "foobar",
 			service: &dynamic.ServersLoadBalancer{
+				Strategy: dynamic.BalancerStrategyWRR,
 				Servers: []dynamic.Server{
 					{
 						URL: hasUserAgent.URL,
@@ -308,7 +350,7 @@ func TestGetLoadBalancerServiceHandler(t *testing.T) {
 	for _, test := range testCases {
 		t.Run(test.desc, func(t *testing.T) {
 			serviceInfo := &runtime.ServiceInfo{Service: &dynamic.Service{LoadBalancer: test.service}}
-			handler, err := sm.getLoadBalancerServiceHandler(context.Background(), test.serviceName, serviceInfo)
+			handler, err := sm.getLoadBalancerServiceHandler(t.Context(), test.serviceName, serviceInfo)
 
 			assert.NoError(t, err)
 			assert.NotNil(t, handler)
@@ -379,6 +421,7 @@ func Test1xxResponses(t *testing.T) {
 	info := &runtime.ServiceInfo{
 		Service: &dynamic.Service{
 			LoadBalancer: &dynamic.ServersLoadBalancer{
+				Strategy: dynamic.BalancerStrategyWRR,
 				Servers: []dynamic.Server{
 					{
 						URL: backend.URL,
@@ -388,7 +431,7 @@ func Test1xxResponses(t *testing.T) {
 		},
 	}
 
-	handler, err := sm.getLoadBalancerServiceHandler(context.Background(), "foobar", info)
+	handler, err := sm.getLoadBalancerServiceHandler(t.Context(), "foobar", info)
 	assert.NoError(t, err)
 
 	frontend := httptest.NewServer(handler)
@@ -432,7 +475,7 @@ func Test1xxResponses(t *testing.T) {
 			return nil
 		},
 	}
-	req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), http.MethodGet, frontend.URL, nil)
+	req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(t.Context(), trace), http.MethodGet, frontend.URL, nil)
 
 	res, err := frontendClient.Do(req)
 	assert.NoError(t, err)
@@ -450,23 +493,15 @@ func Test1xxResponses(t *testing.T) {
 	}
 }
 
-type serviceBuilderFunc func(ctx context.Context, serviceName string) (http.Handler, error)
-
-func (s serviceBuilderFunc) BuildHTTP(ctx context.Context, serviceName string) (http.Handler, error) {
-	return s(ctx, serviceName)
-}
-
-type internalHandler struct{}
-
-func (internalHandler) ServeHTTP(_ http.ResponseWriter, _ *http.Request) {}
-
 func TestManager_ServiceBuilders(t *testing.T) {
 	var internalHandler internalHandler
 
 	manager := NewManager(map[string]*runtime.ServiceInfo{
 		"test@test": {
 			Service: &dynamic.Service{
-				LoadBalancer: &dynamic.ServersLoadBalancer{},
+				LoadBalancer: &dynamic.ServersLoadBalancer{
+					Strategy: dynamic.BalancerStrategyWRR,
+				},
 			},
 		},
 	}, nil, nil, &TransportManager{
@@ -480,15 +515,15 @@ func TestManager_ServiceBuilders(t *testing.T) {
 		return nil, nil
 	}))
 
-	h, err := manager.BuildHTTP(context.Background(), "test@internal")
+	h, err := manager.BuildHTTP(t.Context(), "test@internal")
 	require.NoError(t, err)
 	assert.Equal(t, internalHandler, h)
 
-	h, err = manager.BuildHTTP(context.Background(), "test@test")
+	h, err = manager.BuildHTTP(t.Context(), "test@test")
 	require.NoError(t, err)
 	assert.NotNil(t, h)
 
-	_, err = manager.BuildHTTP(context.Background(), "wrong@test")
+	_, err = manager.BuildHTTP(t.Context(), "wrong@test")
 	assert.Error(t, err)
 }
 
@@ -505,7 +540,9 @@ func TestManager_Build(t *testing.T) {
 			configs: map[string]*runtime.ServiceInfo{
 				"serviceName": {
 					Service: &dynamic.Service{
-						LoadBalancer: &dynamic.ServersLoadBalancer{},
+						LoadBalancer: &dynamic.ServersLoadBalancer{
+							Strategy: dynamic.BalancerStrategyWRR,
+						},
 					},
 				},
 			},
@@ -516,7 +553,9 @@ func TestManager_Build(t *testing.T) {
 			configs: map[string]*runtime.ServiceInfo{
 				"serviceName@provider-1": {
 					Service: &dynamic.Service{
-						LoadBalancer: &dynamic.ServersLoadBalancer{},
+						LoadBalancer: &dynamic.ServersLoadBalancer{
+							Strategy: dynamic.BalancerStrategyWRR,
+						},
 					},
 				},
 			},
@@ -527,7 +566,9 @@ func TestManager_Build(t *testing.T) {
 			configs: map[string]*runtime.ServiceInfo{
 				"serviceName@provider-1": {
 					Service: &dynamic.Service{
-						LoadBalancer: &dynamic.ServersLoadBalancer{},
+						LoadBalancer: &dynamic.ServersLoadBalancer{
+							Strategy: dynamic.BalancerStrategyWRR,
+						},
 					},
 				},
 			},
@@ -541,7 +582,7 @@ func TestManager_Build(t *testing.T) {
 
 			manager := NewManager(test.configs, nil, nil, &transportManagerMock{}, nil)
 
-			ctx := context.Background()
+			ctx := t.Context()
 			if len(test.providerName) > 0 {
 				ctx = provider.AddInContext(ctx, "foobar@"+test.providerName)
 			}
@@ -564,11 +605,133 @@ func TestMultipleTypeOnBuildHTTP(t *testing.T) {
 
 	manager := NewManager(services, nil, nil, &transportManagerMock{}, nil)
 
-	_, err := manager.BuildHTTP(context.Background(), "test@file")
+	_, err := manager.BuildHTTP(t.Context(), "test@file")
 	assert.Error(t, err, "cannot create service: multi-types service not supported, consider declaring two different pieces of service instead")
 }
 
-func boolPtr(v bool) *bool { return &v }
+func TestGetServiceHandler_Headers(t *testing.T) {
+	pb := httputil.NewProxyBuilder(&transportManagerMock{}, nil)
+
+	testCases := []struct {
+		desc            string
+		service         dynamic.WRRService
+		userAgent       string
+		expectedHeaders map[string]string
+	}{
+		{
+			desc: "Service with custom headers",
+			service: dynamic.WRRService{
+				Name: "target-service",
+				Headers: map[string]string{
+					"X-Custom-Header": "custom-value",
+					"X-Service-Type":  "knative-service",
+					"Authorization":   "bearer token123",
+				},
+			},
+			userAgent: "test-agent",
+			expectedHeaders: map[string]string{
+				"X-Custom-Header": "custom-value",
+				"X-Service-Type":  "knative-service",
+				"Authorization":   "bearer token123",
+			},
+		},
+		{
+			desc: "Service with empty headers map",
+			service: dynamic.WRRService{
+				Name:    "target-service",
+				Headers: map[string]string{},
+			},
+			userAgent:       "test-agent",
+			expectedHeaders: map[string]string{},
+		},
+		{
+			desc: "Service with nil headers",
+			service: dynamic.WRRService{
+				Name:    "target-service",
+				Headers: nil,
+			},
+			userAgent:       "test-agent",
+			expectedHeaders: map[string]string{},
+		},
+		{
+			desc: "Service with headers that override existing request headers",
+			service: dynamic.WRRService{
+				Name: "target-service",
+				Headers: map[string]string{
+					"User-Agent": "overridden-agent",
+					"Accept":     "application/json",
+				},
+			},
+			userAgent: "original-agent",
+			expectedHeaders: map[string]string{
+				"User-Agent": "overridden-agent",
+				"Accept":     "application/json",
+			},
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.desc, func(t *testing.T) {
+			// Create a test server that will verify the headers are properly set for this specific test case
+			testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Verify expected headers are present
+				for key, expectedValue := range test.expectedHeaders {
+					actualValue := r.Header.Get(key)
+					assert.Equal(t, expectedValue, actualValue, "Header %s should be %s", key, expectedValue)
+				}
+
+				w.Header().Set("X-Response", "success")
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(testServer.Close)
+
+			// Create the target service that the WRRService will point to
+			targetServiceInfo := &runtime.ServiceInfo{
+				Service: &dynamic.Service{
+					LoadBalancer: &dynamic.ServersLoadBalancer{
+						Strategy: dynamic.BalancerStrategyWRR,
+						Servers: []dynamic.Server{
+							{URL: testServer.URL},
+						},
+					},
+				},
+			}
+
+			// Create a fresh manager for each test case
+			sm := NewManager(map[string]*runtime.ServiceInfo{
+				"target-service": targetServiceInfo,
+			}, nil, nil, &transportManagerMock{}, pb)
+
+			// Get the service handler
+			handler, err := sm.getServiceHandler(t.Context(), test.service)
+			require.NoError(t, err)
+			require.NotNil(t, handler)
+
+			// Create a test request
+			req := testhelpers.MustNewRequest(http.MethodGet, "http://test.example.com/path", nil)
+			if test.userAgent != "" {
+				req.Header.Set("User-Agent", test.userAgent)
+			}
+
+			// Execute the request
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			// Verify the response was successful
+			assert.Equal(t, http.StatusOK, recorder.Code)
+		})
+	}
+}
+
+type serviceBuilderFunc func(ctx context.Context, serviceName string) (http.Handler, error)
+
+func (s serviceBuilderFunc) BuildHTTP(ctx context.Context, serviceName string) (http.Handler, error) {
+	return s(ctx, serviceName)
+}
+
+type internalHandler struct{}
+
+func (internalHandler) ServeHTTP(_ http.ResponseWriter, _ *http.Request) {}
 
 type forwarderMock struct{}
 

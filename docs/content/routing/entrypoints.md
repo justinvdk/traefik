@@ -107,6 +107,8 @@ They can be defined by using a file (YAML or TOML) or CLI arguments.
         address: ":8888" # same as ":8888/tcp"
         http2:
           maxConcurrentStreams: 42
+          maxDecoderHeaderTableSize: 42
+          maxEncoderHeaderTableSize: 42
         http3:
           advertisedPort: 8888
         transport:
@@ -136,6 +138,8 @@ They can be defined by using a file (YAML or TOML) or CLI arguments.
         address = ":8888" # same as ":8888/tcp"
         [entryPoints.name.http2]
           maxConcurrentStreams = 42
+          maxDecoderHeaderTableSize = 42
+          maxEncoderHeaderTableSize = 42
         [entryPoints.name.http3]
           advertisedPort = 8888
         [entryPoints.name.transport]
@@ -158,6 +162,8 @@ They can be defined by using a file (YAML or TOML) or CLI arguments.
     ## Static configuration
     --entryPoints.name.address=:8888 # same as :8888/tcp
     --entryPoints.name.http2.maxConcurrentStreams=42
+    --entryPoints.name.http2.maxDecoderHeaderTableSize=42
+    --entryPoints.name.http2.maxEncoderHeaderTableSize=42
     --entryPoints.name.http3.advertisedport=8888
     --entryPoints.name.transport.lifeCycle.requestAcceptGraceTimeout=42
     --entryPoints.name.transport.lifeCycle.graceTimeOut=42
@@ -406,6 +412,52 @@ entryPoints:
 
 ```bash tab="CLI"
 --entryPoints.name.http2.maxConcurrentStreams=250
+```
+
+#### `maxDecoderHeaderTableSize`
+
+_Optional, Default=4096_
+
+`maxDecoderHeaderTableSize` specifies the maximum size of the HTTP2 HPACK header table on the decoding (receiving from client) side.
+
+```yaml tab="File (YAML)"
+entryPoints:
+  foo:
+    http2:
+      maxDecoderHeaderTableSize: 4096
+```
+
+```toml tab="File (TOML)"
+[entryPoints.foo]
+  [entryPoints.foo.http2]
+    maxDecoderHeaderTableSize = 4096
+```
+
+```bash tab="CLI"
+--entryPoints.name.http2.maxDecoderHeaderTableSize=4096
+```
+
+#### `maxEncoderHeaderTableSize`
+
+_Optional, Default=4096_
+
+`maxEncoderHeaderTableSize` specifies the maximum size of the HTTP2 HPACK header table on the encoding (sending to client) side.
+
+```yaml tab="File (YAML)"
+entryPoints:
+  foo:
+    http2:
+      maxEncoderHeaderTableSize: 4096
+```
+
+```toml tab="File (TOML)"
+[entryPoints.foo]
+  [entryPoints.foo.http2]
+    maxEncoderHeaderTableSize = 4096
+```
+
+```bash tab="CLI"
+--entryPoints.name.http2.maxEncoderHeaderTableSize=4096
 ```
 
 ### HTTP/3
@@ -1290,7 +1342,7 @@ entryPoints:
 
 Traefik supports [systemd socket activation](https://www.freedesktop.org/software/systemd/man/latest/systemd-socket-activate.html).
 
-When a socket activation file descriptor name matches an EntryPoint name, the corresponding file descriptor will be used as the TCP listener for the matching EntryPoint.
+When a socket activation file descriptor name matches an EntryPoint name, the corresponding file descriptor will be used as the TCP/UDP listener for the matching EntryPoint.
 
 ```bash
 systemd-socket-activate -l 80 -l 443 --fdname web:websecure  ./traefik --entrypoints.web --entrypoints.websecure
@@ -1298,15 +1350,15 @@ systemd-socket-activate -l 80 -l 443 --fdname web:websecure  ./traefik --entrypo
 
 !!! warning "EntryPoint Address"
 
-    When a socket activation file descriptor name matches an EntryPoint name its address configuration is ignored.     
-
-!!! warning "TCP Only"
-
-    Socket activation is not yet supported with UDP entryPoints.
+    When a socket activation file descriptor name matches an EntryPoint name its address configuration is ignored. For support UDP routing, address must have /udp suffix (--entrypoints.my-udp-entrypoint.address=/udp)
 
 !!! warning "Docker Support"
 
     Socket activation is not supported by Docker but works with Podman containers.
+
+!!! warning "Multiple listeners in socket file"
+
+    Each systemd socket file must contain only one Listen directive, except in the case of HTTP/3, where the file must include both ListenStream and ListenDatagram directives. To set up TCP and UDP listeners on the same port, use multiple socket files with different entrypoints names.
 
 ## Observability Options
 

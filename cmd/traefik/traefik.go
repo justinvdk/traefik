@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/x509"
-	"encoding/json"
 	"fmt"
 	"io"
 	stdlog "log"
@@ -12,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -32,23 +30,24 @@ import (
 	"github.com/traefik/traefik/v3/pkg/config/dynamic"
 	"github.com/traefik/traefik/v3/pkg/config/runtime"
 	"github.com/traefik/traefik/v3/pkg/config/static"
-	"github.com/traefik/traefik/v3/pkg/logs"
-	"github.com/traefik/traefik/v3/pkg/metrics"
 	"github.com/traefik/traefik/v3/pkg/middlewares/accesslog"
+	"github.com/traefik/traefik/v3/pkg/observability/logs"
+	"github.com/traefik/traefik/v3/pkg/observability/metrics"
+	"github.com/traefik/traefik/v3/pkg/observability/tracing"
+	otypes "github.com/traefik/traefik/v3/pkg/observability/types"
 	"github.com/traefik/traefik/v3/pkg/provider/acme"
 	"github.com/traefik/traefik/v3/pkg/provider/aggregator"
 	"github.com/traefik/traefik/v3/pkg/provider/tailscale"
 	"github.com/traefik/traefik/v3/pkg/provider/traefik"
 	"github.com/traefik/traefik/v3/pkg/proxy"
 	"github.com/traefik/traefik/v3/pkg/proxy/httputil"
+	"github.com/traefik/traefik/v3/pkg/redactor"
 	"github.com/traefik/traefik/v3/pkg/safe"
 	"github.com/traefik/traefik/v3/pkg/server"
 	"github.com/traefik/traefik/v3/pkg/server/middleware"
 	"github.com/traefik/traefik/v3/pkg/server/service"
 	"github.com/traefik/traefik/v3/pkg/tcp"
 	traefiktls "github.com/traefik/traefik/v3/pkg/tls"
-	"github.com/traefik/traefik/v3/pkg/tracing"
-	"github.com/traefik/traefik/v3/pkg/types"
 	"github.com/traefik/traefik/v3/pkg/version"
 )
 
@@ -91,7 +90,10 @@ Complete documentation is available at https://traefik.io`,
 }
 
 func runCmd(staticConfiguration *static.Configuration) error {
-	if err := setupLogger(staticConfiguration); err != nil {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	if err := setupLogger(ctx, staticConfiguration); err != nil {
 		return fmt.Errorf("setting up logger: %w", err)
 	}
 
@@ -105,12 +107,11 @@ func runCmd(staticConfiguration *static.Configuration) error {
 	log.Info().Str("version", version.Version).
 		Msgf("Traefik version %s built on %s", version.Version, version.BuildDate)
 
-	jsonConf, err := json.Marshal(staticConfiguration)
+	redactedStaticConfiguration, err := redactor.RemoveCredentials(staticConfiguration)
 	if err != nil {
-		log.Error().Err(err).Msg("Could not marshal static configuration")
-		log.Debug().Interface("staticConfiguration", staticConfiguration).Msg("Static configuration loaded [struct]")
+		log.Error().Err(err).Msg("Could not redact static configuration")
 	} else {
-		log.Debug().RawJSON("staticConfiguration", jsonConf).Msg("Static configuration loaded [json]")
+		log.Debug().RawJSON("staticConfiguration", []byte(redactedStaticConfiguration)).Msg("Static configuration loaded [json]")
 	}
 
 	if staticConfiguration.Global.CheckNewVersion {
@@ -123,8 +124,6 @@ func runCmd(staticConfiguration *static.Configuration) error {
 	if err != nil {
 		return err
 	}
-
-	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 	if staticConfiguration.Ping != nil {
 		staticConfiguration.Ping.WithContext(ctx)
@@ -183,7 +182,9 @@ func setupServer(staticConfiguration *static.Configuration) (*server.Server, err
 
 	// ACME
 
-	tlsManager := traefiktls.NewManager()
+	tlsManager := traefiktls.NewManager(staticConfiguration.OCSP)
+	routinesPool.GoCtx(tlsManager.Run)
+
 	httpChallengeProvider := acme.NewChallengeHTTP()
 
 	tlsChallengeProvider := acme.NewChallengeTLSALPN()
@@ -209,8 +210,8 @@ func setupServer(staticConfiguration *static.Configuration) (*server.Server, err
 		}
 	}
 	metricsRegistry := metrics.NewMultiRegistry(metricRegistries)
-	accessLog := setupAccessLog(staticConfiguration.AccessLog)
-	tracer, tracerCloser := setupTracing(staticConfiguration.Tracing)
+	accessLog := setupAccessLog(ctx, staticConfiguration.AccessLog)
+	tracer, tracerCloser := setupTracing(ctx, staticConfiguration.Tracing)
 	observabilityMgr := middleware.NewObservabilityMgr(*staticConfiguration, metricsRegistry, semConvMetricRegistry, accessLog, tracer, tracerCloser)
 
 	// Entrypoints
@@ -302,7 +303,10 @@ func setupServer(staticConfiguration *static.Configuration) (*server.Server, err
 
 	// Router factory
 
-	routerFactory := server.NewRouterFactory(*staticConfiguration, managerFactory, tlsManager, observabilityMgr, pluginBuilder, dialerManager)
+	routerFactory, err := server.NewRouterFactory(*staticConfiguration, managerFactory, tlsManager, observabilityMgr, pluginBuilder, dialerManager)
+	if err != nil {
+		return nil, fmt.Errorf("creating router factory: %w", err)
+	}
 
 	// Watcher
 
@@ -428,7 +432,7 @@ func getDefaultsEntrypoints(staticConfiguration *static.Configuration) []string 
 		}
 	}
 
-	sort.Strings(defaultEntryPoints)
+	slices.Sort(defaultEntryPoints)
 	return defaultEntryPoints
 }
 
@@ -501,7 +505,7 @@ func initTailscaleProviders(cfg *static.Configuration, providerAggregator *aggre
 	return providers
 }
 
-func registerMetricClients(metricsConfig *types.Metrics) []metrics.Registry {
+func registerMetricClients(metricsConfig *otypes.Metrics) []metrics.Registry {
 	if metricsConfig == nil {
 		return nil
 	}
@@ -569,7 +573,7 @@ func registerMetricClients(metricsConfig *types.Metrics) []metrics.Registry {
 }
 
 func appendCertMetric(gauge gokitmetrics.Gauge, certificate *x509.Certificate) {
-	sort.Strings(certificate.DNSNames)
+	slices.Sort(certificate.DNSNames)
 
 	labels := []string{
 		"cn", certificate.Subject.CommonName,
@@ -582,12 +586,12 @@ func appendCertMetric(gauge gokitmetrics.Gauge, certificate *x509.Certificate) {
 	gauge.With(labels...).Set(notAfter)
 }
 
-func setupAccessLog(conf *types.AccessLog) *accesslog.Handler {
+func setupAccessLog(ctx context.Context, conf *otypes.AccessLog) *accesslog.Handler {
 	if conf == nil {
 		return nil
 	}
 
-	accessLoggerMiddleware, err := accesslog.NewHandler(conf)
+	accessLoggerMiddleware, err := accesslog.NewHandler(ctx, conf)
 	if err != nil {
 		log.Warn().Err(err).Msg("Unable to create access logger")
 		return nil
@@ -596,12 +600,12 @@ func setupAccessLog(conf *types.AccessLog) *accesslog.Handler {
 	return accessLoggerMiddleware
 }
 
-func setupTracing(conf *static.Tracing) (*tracing.Tracer, io.Closer) {
+func setupTracing(ctx context.Context, conf *static.Tracing) (*tracing.Tracer, io.Closer) {
 	if conf == nil {
 		return nil, nil
 	}
 
-	tracer, closer, err := tracing.NewTracing(conf)
+	tracer, closer, err := tracing.NewTracing(ctx, conf)
 	if err != nil {
 		log.Warn().Err(err).Msg("Unable to create tracer")
 		return nil, nil

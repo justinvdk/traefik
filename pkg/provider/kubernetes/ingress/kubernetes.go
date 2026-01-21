@@ -21,7 +21,7 @@ import (
 	ptypes "github.com/traefik/paerser/types"
 	"github.com/traefik/traefik/v3/pkg/config/dynamic"
 	"github.com/traefik/traefik/v3/pkg/job"
-	"github.com/traefik/traefik/v3/pkg/logs"
+	"github.com/traefik/traefik/v3/pkg/observability/logs"
 	"github.com/traefik/traefik/v3/pkg/provider"
 	"github.com/traefik/traefik/v3/pkg/provider/kubernetes/k8s"
 	"github.com/traefik/traefik/v3/pkg/safe"
@@ -56,6 +56,7 @@ type Provider struct {
 	DisableIngressClassLookup    bool `description:"Disables the lookup of IngressClasses (Deprecated, please use DisableClusterScopeResources)." json:"disableIngressClassLookup,omitempty" toml:"disableIngressClassLookup,omitempty" yaml:"disableIngressClassLookup,omitempty" export:"true"`
 	DisableClusterScopeResources bool `description:"Disables the lookup of cluster scope resources (incompatible with IngressClasses and NodePortLB enabled services)." json:"disableClusterScopeResources,omitempty" toml:"disableClusterScopeResources,omitempty" yaml:"disableClusterScopeResources,omitempty" export:"true"`
 	NativeLBByDefault            bool `description:"Defines whether to use Native Kubernetes load-balancing mode by default." json:"nativeLBByDefault,omitempty" toml:"nativeLBByDefault,omitempty" yaml:"nativeLBByDefault,omitempty" export:"true"`
+	StrictPrefixMatching         bool `description:"Make prefix matching strictly comply with the Kubernetes Ingress specification (path-element-wise matching instead of character-by-character string matching)." json:"strictPrefixMatching,omitempty" toml:"strictPrefixMatching,omitempty" yaml:"strictPrefixMatching,omitempty" export:"true"`
 
 	// The default rule syntax is initialized with the configuration defined by the user with the core.DefaultRuleSyntax option.
 	DefaultRuleSyntax string `json:"-" toml:"-" yaml:"-" label:"-" file:"-"`
@@ -247,6 +248,10 @@ func (p *Provider) loadConfigurationFromIngresses(ctx context.Context, client Cl
 			continue
 		}
 
+		if err := p.updateIngressStatus(ingress, client); err != nil {
+			logger.Error().Err(err).Msg("Error while updating ingress status")
+		}
+
 		rtConfig, err := parseRouterConfig(ingress.Annotations)
 		if err != nil {
 			logger.Error().Err(err).Msg("Failed to parse annotations")
@@ -283,8 +288,9 @@ func (p *Provider) loadConfigurationFromIngresses(ctx context.Context, client Cl
 			}
 
 			rt := &dynamic.Router{
-				Rule:       "PathPrefix(`/`)",
-				RuleSyntax: "v3",
+				Rule: "PathPrefix(`/`)",
+				// "default" stands for the default rule syntax in Traefik v3, i.e. the v3 syntax.
+				RuleSyntax: "default",
 				Priority:   math.MinInt32,
 				Service:    "default-backend",
 			}
@@ -305,15 +311,22 @@ func (p *Provider) loadConfigurationFromIngresses(ctx context.Context, client Cl
 		routers := map[string][]*dynamic.Router{}
 
 		for _, rule := range ingress.Spec.Rules {
-			if err := p.updateIngressStatus(ingress, client); err != nil {
-				logger.Error().Err(err).Msg("Error while updating ingress status")
-			}
-
 			if rule.HTTP == nil {
 				continue
 			}
 
 			for _, pa := range rule.HTTP.Paths {
+				if pa.Backend.Resource != nil {
+					// https://kubernetes.io/docs/concepts/services-networking/ingress/#resource-backend
+					logger.Error().Msg("Resource backends are not supported")
+					continue
+				}
+
+				if pa.Backend.Service == nil {
+					logger.Error().Msg("Missing service definition")
+					continue
+				}
+
 				service, err := p.loadService(client, ingress.Namespace, pa.Backend)
 				if err != nil {
 					logger.Error().
@@ -407,22 +420,80 @@ func (p *Provider) updateIngressStatus(ing *netv1.Ingress, k8sClient Client) err
 		return fmt.Errorf("cannot get service %s, received error: %w", p.IngressEndpoint.PublishedService, err)
 	}
 
-	if exists && service.Status.LoadBalancer.Ingress == nil {
-		// service exists, but has no Load Balancer status
-		log.Debug().Msgf("Skipping updating Ingress %s/%s due to service %s having no status set", ing.Namespace, ing.Name, p.IngressEndpoint.PublishedService)
-		return nil
-	}
-
 	if !exists {
 		return fmt.Errorf("missing service: %s", p.IngressEndpoint.PublishedService)
 	}
 
-	ingresses, err := convertSlice[netv1.IngressLoadBalancerIngress](service.Status.LoadBalancer.Ingress)
-	if err != nil {
-		return err
+	var ingressStatus []netv1.IngressLoadBalancerIngress
+
+	switch service.Spec.Type {
+	case corev1.ServiceTypeLoadBalancer:
+		if service.Status.LoadBalancer.Ingress == nil {
+			// service exists, but has no Load Balancer status
+			log.Debug().Msgf("Skipping updating Ingress %s/%s due to service %s having no status set", ing.Namespace, ing.Name, p.IngressEndpoint.PublishedService)
+			return nil
+		}
+
+		ingressStatus, err = convertSlice[netv1.IngressLoadBalancerIngress](service.Status.LoadBalancer.Ingress)
+		if err != nil {
+			return fmt.Errorf("converting ingress loadbalancer status: %w", err)
+		}
+
+	case corev1.ServiceTypeClusterIP:
+		var ports []netv1.IngressPortStatus
+		for _, port := range service.Spec.Ports {
+			ports = append(ports, netv1.IngressPortStatus{
+				Port:     port.Port,
+				Protocol: port.Protocol,
+			})
+		}
+
+		for _, ip := range service.Spec.ExternalIPs {
+			ingressStatus = append(ingressStatus, netv1.IngressLoadBalancerIngress{
+				IP:    ip,
+				Ports: ports,
+			})
+		}
+
+	case corev1.ServiceTypeNodePort:
+		if p.DisableClusterScopeResources {
+			return errors.New("node port service type is not supported when cluster scope resources lookup is disabled")
+		}
+
+		nodes, _, err := k8sClient.GetNodes()
+		if err != nil {
+			return fmt.Errorf("getting nodes: %w", err)
+		}
+
+		var ports []netv1.IngressPortStatus
+		for _, port := range service.Spec.Ports {
+			ports = append(ports, netv1.IngressPortStatus{
+				Port:     port.NodePort,
+				Protocol: port.Protocol,
+			})
+		}
+
+		for _, node := range nodes {
+			for _, address := range node.Status.Addresses {
+				if address.Type == corev1.NodeExternalIP {
+					ingressStatus = append(ingressStatus, netv1.IngressLoadBalancerIngress{
+						IP:    address.Address,
+						Ports: ports,
+					})
+				}
+			}
+		}
+
+	case corev1.ServiceTypeExternalName:
+		ingressStatus = []netv1.IngressLoadBalancerIngress{{
+			Hostname: service.Spec.ExternalName,
+		}}
+
+	default:
+		return fmt.Errorf("unsupported service type: %s", service.Spec.Type)
 	}
 
-	return k8sClient.UpdateIngressStatus(ing, ingresses)
+	return k8sClient.UpdateIngressStatus(ing, ingressStatus)
 }
 
 func (p *Provider) shouldProcessIngress(ingress *netv1.Ingress, ingressClasses []*netv1.IngressClass) bool {
@@ -438,15 +509,6 @@ func (p *Provider) shouldProcessIngress(ingress *netv1.Ingress, ingressClasses [
 }
 
 func (p *Provider) loadService(client Client, namespace string, backend netv1.IngressBackend) (*dynamic.Service, error) {
-	if backend.Resource != nil {
-		// https://kubernetes.io/docs/concepts/services-networking/ingress/#resource-backend
-		return nil, errors.New("resource backends are not supported")
-	}
-
-	if backend.Service == nil {
-		return nil, errors.New("missing service definition")
-	}
-
 	service, exists, err := client.GetService(namespace, backend.Service.Name)
 	if err != nil {
 		return nil, err
@@ -644,7 +706,7 @@ func (p *Provider) loadRouter(rule netv1.IngressRule, pa netv1.HTTPIngressPath, 
 			matcher = "Path"
 		}
 
-		rules = append(rules, fmt.Sprintf("%s(`%s`)", matcher, pa.Path))
+		rules = append(rules, buildRule(p.StrictPrefixMatching, matcher, pa.Path))
 	}
 
 	rt.Rule = strings.Join(rules, " && ")
@@ -788,6 +850,41 @@ func makeRouterKeyWithHash(key, rule string) (string, error) {
 	dupKey := fmt.Sprintf("%s-%.10x", key, h.Sum(nil))
 
 	return dupKey, nil
+}
+
+func buildRule(strictPrefixMatching bool, matcher string, path string) string {
+	// When enabled, strictPrefixMatching ensures that prefix matching follows
+	// the Kubernetes Ingress spec (path-element-wise instead of character-wise).
+	if strictPrefixMatching && matcher == "PathPrefix" {
+		// According to
+		// https://kubernetes.io/docs/concepts/services-networking/ingress/#examples,
+		// "/v12" should not match "/v1".
+		//
+		// Traefik's default PathPrefix matcher performs a character-wise prefix match,
+		// unlike Kubernetes which matches path elements. To mimic Kubernetes behavior,
+		// we will use Path and PathPrefix to replicate element-wise behavior.
+		//
+		// "PathPrefix" in Kubernetes Gateway API is semantically equivalent to the "Prefix" path type in the
+		// Kubernetes Ingress API.
+		return buildStrictPrefixMatchingRule(path)
+	}
+
+	return fmt.Sprintf("%s(`%s`)", matcher, path)
+}
+
+// buildStrictPrefixMatchingRule is a helper function to build a path prefix rule that matches path prefix split by `/`.
+// For example, the paths `/abc`, `/abc/`, and `/abc/def` would all match the prefix `/abc`,
+// but the path `/abcd` would not. See TestStrictPrefixMatchingRule() for more examples.
+//
+// "PathPrefix" in Kubernetes Gateway API is semantically equivalent to the "Prefix" path type in the
+// Kubernetes Ingress API.
+func buildStrictPrefixMatchingRule(path string) string {
+	if path == "/" {
+		return "PathPrefix(`/`)"
+	}
+
+	path = strings.TrimSuffix(path, "/")
+	return fmt.Sprintf("(Path(`%[1]s`) || PathPrefix(`%[1]s/`))", path)
 }
 
 func throttleEvents(ctx context.Context, throttleDuration time.Duration, pool *safe.Pool, eventsChan <-chan interface{}) chan interface{} {

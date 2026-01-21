@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/traefik/traefik/v3/pkg/config/dynamic"
+	otypes "github.com/traefik/traefik/v3/pkg/observability/types"
 	"github.com/traefik/traefik/v3/pkg/types"
 )
 
@@ -58,9 +59,10 @@ func Test_parseRouterConfig(t *testing.T) {
 						Options: "foobar",
 					},
 					Observability: &dynamic.RouterObservabilityConfig{
-						AccessLogs: pointer(true),
-						Tracing:    pointer(true),
-						Metrics:    pointer(true),
+						AccessLogs:     pointer(true),
+						Tracing:        pointer(true),
+						Metrics:        pointer(true),
+						TraceVerbosity: otypes.MinimalVerbosity,
 					},
 				},
 			},
@@ -121,6 +123,7 @@ func Test_parseServiceConfig(t *testing.T) {
 				"traefik.ingress.kubernetes.io/service.sticky.cookie.name":     "foobar",
 				"traefik.ingress.kubernetes.io/service.sticky.cookie.secure":   "true",
 				"traefik.ingress.kubernetes.io/service.sticky.cookie.samesite": "none",
+				"traefik.ingress.kubernetes.io/service.sticky.cookie.domain":   "foo.com",
 				"traefik.ingress.kubernetes.io/service.sticky.cookie.path":     "foobar",
 			},
 			expected: &ServiceConfig{
@@ -131,7 +134,8 @@ func Test_parseServiceConfig(t *testing.T) {
 							Secure:   true,
 							HTTPOnly: true,
 							SameSite: "none",
-							Path:     String("foobar"),
+							Domain:   "foo.com",
+							Path:     pointer("foobar"),
 						},
 					},
 					ServersScheme:    "protocol",
@@ -150,7 +154,7 @@ func Test_parseServiceConfig(t *testing.T) {
 				Service: &ServiceIng{
 					Sticky: &dynamic.Sticky{
 						Cookie: &dynamic.Cookie{
-							Path: String("/"),
+							Path: pointer("/"),
 						},
 					},
 					PassHostHeader: pointer(true),
