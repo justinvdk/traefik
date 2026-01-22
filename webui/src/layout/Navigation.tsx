@@ -21,7 +21,6 @@ import {
   VisuallyHidden,
 } from '@traefiklabs/faency'
 import { useContext, useEffect, useMemo, useState } from 'react'
-import { Helmet } from 'react-helmet-async'
 import { BsChevronDoubleRight, BsChevronDoubleLeft } from 'react-icons/bs'
 import { FiBookOpen, FiGithub, FiHelpCircle } from 'react-icons/fi'
 import { matchPath, useHref } from 'react-router'
@@ -29,18 +28,13 @@ import { useLocation } from 'react-router-dom'
 import { useWindowSize } from 'usehooks-ts'
 
 import Container from './Container'
-import { DARK_PRIMARY_COLOR, LIGHT_PRIMARY_COLOR } from './Page'
 
 import IconButton from 'components/buttons/IconButton'
 import Logo from 'components/icons/Logo'
-import { PluginsIcon } from 'components/icons/PluginsIcon'
 import ThemeSwitcher from 'components/ThemeSwitcher'
 import TooltipText from 'components/TooltipText'
 import { VersionContext } from 'contexts/version'
-import useHubUpgradeButton from 'hooks/use-hub-upgrade-button'
 import useTotals from 'hooks/use-overview-totals'
-import { useIsDarkMode } from 'hooks/use-theme'
-import ApimDemoNavMenu from 'pages/hub-demo/HubDemoNav'
 import { Route, ROUTES } from 'routes'
 
 export const LAPTOP_BP = 1025
@@ -274,29 +268,13 @@ export const SideNav = ({
             ))}
           </Flex>
         ))}
-        <Flex direction="column" css={{ borderTop: '1px solid $colors$tableRowBorder', borderRadius: 0, py: '$3' }}>
-          <NavigationLink
-            startAdornment={<PluginsIcon />}
-            css={{
-              mt: '$3',
-              whiteSpace: 'nowrap',
-            }}
-            href="https://plugins.traefik.io/"
-            target="_blank"
-          >
-            {!isSmallScreen || isExpanded ? 'Plugins' : ''}
-          </NavigationLink>
-        </Flex>
-
-        <ApimDemoNavMenu isResponsive={isResponsive} isSmallScreen={isSmallScreen} isExpanded={isExpanded} />
       </Container>
     </NavigationDrawer>
   )
 }
 
-export const TopNav = ({ css, noHubButton = false }: { css?: CSS; noHubButton?: boolean }) => {
+export const TopNav = ({ css }: { css?: CSS; noHubButton?: boolean }) => {
   const { version } = useContext(VersionContext)
-  const isDarkMode = useIsDarkMode()
 
   const parsedVersion = useMemo(() => {
     if (!version) {
@@ -309,33 +287,9 @@ export const TopNav = ({ css, noHubButton = false }: { css?: CSS; noHubButton?: 
     return matches ? 'v' + matches[1] : 'master'
   }, [version])
 
-  const { signatureVerified, scriptBlobUrl, isCustomElementDefined } = useHubUpgradeButton()
-
-  const displayUpgradeToHubButton = useMemo(
-    () => !noHubButton && signatureVerified && (!!scriptBlobUrl || isCustomElementDefined),
-    [isCustomElementDefined, noHubButton, scriptBlobUrl, signatureVerified],
-  )
-
   return (
     <>
-      {displayUpgradeToHubButton && (
-        <Helmet>
-          <meta
-            httpEquiv="Content-Security-Policy"
-            content="script-src 'self' blob: 'unsafe-inline'; object-src 'none'; base-uri 'self';"
-          />
-          <script src={scriptBlobUrl as string} type="module"></script>
-        </Helmet>
-      )}
       <Flex as="nav" role="navigation" justify="end" align="center" css={{ gap: '$2', mb: '$6', ...css }}>
-        {displayUpgradeToHubButton && (
-          <Box css={{ fontFamily: '$rubik', fontWeight: '500 !important' }}>
-            <hub-button-app
-              key={`dark-mode-${isDarkMode}`}
-              style={{ backgroundColor: isDarkMode ? DARK_PRIMARY_COLOR : LIGHT_PRIMARY_COLOR, fontWeight: 'inherit' }}
-            />
-          </Box>
-        )}
         <ThemeSwitcher />
 
         <DropdownMenu>

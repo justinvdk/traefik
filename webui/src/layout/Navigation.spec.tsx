@@ -1,5 +1,3 @@
-import { waitFor } from '@testing-library/react'
-
 import { SideNav, TopNav } from './Navigation'
 
 import useHubUpgradeButton from 'hooks/use-hub-upgrade-button'
@@ -28,7 +26,6 @@ describe('Navigation', () => {
     expect(container.innerHTML).toContain('HTTP')
     expect(container.innerHTML).toContain('TCP')
     expect(container.innerHTML).toContain('UDP')
-    expect(container.innerHTML).toContain('Plugins')
   })
 
   it('should render the top navigation bar', async () => {
@@ -63,21 +60,6 @@ describe('Navigation', () => {
 
       const hubButtonApp = container.querySelector('hub-button-app')
       expect(hubButtonApp).toBeNull()
-    })
-
-    it('should render hub-button-app when signatureVerified is true and scriptBlobUrl exists', async () => {
-      mockUseHubUpgradeButton.mockReturnValue({
-        signatureVerified: true,
-        scriptBlobUrl: 'blob:http://localhost:3000/mock-blob-url',
-        isCustomElementDefined: false,
-      })
-
-      const { container } = renderWithProviders(<TopNav />)
-
-      await waitFor(() => {
-        const hubButtonApp = container.querySelector('hub-button-app')
-        expect(hubButtonApp).not.toBeNull()
-      })
     })
 
     it('should NOT render hub-button-app when noHubButton prop is true', async () => {
