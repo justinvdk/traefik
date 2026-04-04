@@ -121,7 +121,7 @@ jobs:
   #         retention-days: 1
 
   release:
-    if: github.ref_type == 'tag' && github.repository == 'justinvdk/traefik'
+    # if: github.ref_type == 'tag' && github.repository == 'justinvdk/traefik'
     runs-on: ubuntu-latest
 
     needs:
