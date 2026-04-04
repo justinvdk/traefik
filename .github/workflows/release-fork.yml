@@ -1,4 +1,4 @@
-name: Release Fork Assets
+name: Release Fork Assets 2
 
 on:
   workflow_dispatch:
@@ -12,67 +12,122 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-
-concurrency:
-  group: release-${{ inputs.release_name }}
-  cancel-in-progress: true
+env:
+  GO_VERSION: '1.24'
+  CGO_ENABLED: 0
+  VERSION: ${{ github.ref_name }}
+  TRAEFIKER_EMAIL: "traefiker@traefik.io"
+  CODENAME: ramequin
 
 jobs:
+
+  build-webui:
+    if: github.ref_type == 'tag' && github.repository == 'justinvdk/traefik'
+    uses: ./.github/workflows/template-webui.yaml
+
+  # build:
+  #   if: github.ref_type == 'tag' && github.repository == 'justinvdk/traefik'
+  #   runs-on: ubuntu-latest
+
+  #   strategy:
+  #     matrix:
+  #       os: [ linux-amd64, linux-386, linux-arm, linux-arm64, linux-ppc64le, linux-s390x, linux-riscv64, darwin, windows-amd64, windows-arm64, windows-386, freebsd, openbsd ]
+  #   needs:
+  #     - build-webui
+
+  #   steps:
+  #     - name: Check out code
+  #       uses: actions/checkout@v5
+  #       with:
+  #         fetch-depth: 0
+
+  #     - name: Set up Go ${{ env.GO_VERSION }}
+  #       uses: actions/setup-go@v5
+  #       env:
+  #         # Ensure cache consistency on Linux, see https://github.com/actions/setup-go/pull/383
+  #         ImageOS: ${{ matrix.os }}
+  #       with:
+  #         go-version: ${{ env.GO_VERSION }}
+  #         check-latest: true
+
+  #     - name: Artifact webui
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: webui.tar.gz
+
+  #     - name: Untar webui
+  #       run: |
+  #         tar xvf webui.tar.gz
+  #         rm webui.tar.gz
+
+  #     - name: Go generate
+  #       run: go generate
+
+
+  #     - name: Generate goreleaser file
+  #       run: |
+  #         GORELEASER_CONFIG_FILE_PATH=$(go run ./internal/release "${{ matrix.os }}")
+  #         echo "GORELEASER_CONFIG_FILE_PATH=$GORELEASER_CONFIG_FILE_PATH" >> $GITHUB_ENV
+
+  #     - name: Build with goreleaser
+  #       uses: goreleaser/goreleaser-action@v6
+  #       with:
+  #         distribution: goreleaser
+  #         # 'latest', 'nightly', or a semver
+  #         version: '~> v2'
+  #         args: release --clean --timeout="90m" --config "${{ env.GORELEASER_CONFIG_FILE_PATH }}"
+
+  #     - name: Artifact binaries
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: ${{ matrix.os }}-binaries
+  #         path: |
+  #           dist/**/*_checksums.txt
+  #           dist/**/*.tar.gz
+  #           dist/**/*.zip
+  #         retention-days: 1
+
   release:
-    runs-on: ubuntu-22.04
+    if: github.ref_type == 'tag' && github.repository == 'justinvdk/traefik'
+    runs-on: ubuntu-latest
+
+    needs:
+      - build-webui
 
     steps:
-      - name: Check out code at selected ref
-        uses: actions/checkout@v4
+      # - name: Check out code
+      #   uses: actions/checkout@v5
+      #   with:
+      #     fetch-depth: 0
+
+      - name: Artifact webui
+        uses: actions/download-artifact@v4
         with:
-          ref: ${{ inputs.ref }}
-          fetch-depth: 0
+          name: webui.tar.gz
 
-      - name: Build binary with WebUI
-        env:
-          VERSION: ${{ inputs.release_name }}
-          CODENAME: custom
-          DOCKER_NON_INTERACTIVE: true
-          IN_DOCKER: ""
+      - name: Untar webui
         run: |
-          make clean-webui generate-webui
-          make binary
+          tar xvf webui.tar.gz
+          rm webui.tar.gz
 
-      - name: Package release asset
-        id: package
-        env:
-          RELEASE_NAME: ${{ inputs.release_name }}
-        shell: bash
-        run: |
-          VERSION_NO_V="${RELEASE_NAME#v}"
-          ASSET_NAME="traefik_v${VERSION_NO_V}_linux_amd64.tar.gz"
-          CHECKSUM_NAME="traefik_v${VERSION_NO_V}_checksums.txt"
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          pattern: "*-binaries"
+          merge-multiple: true
 
-          rm -rf dist/release
-          mkdir -p dist/release
-          cp dist/traefik dist/release/traefik
-          cp LICENSE.md dist/release/LICENSE.md
-          cp CHANGELOG.md dist/release/CHANGELOG.md
-
-          tar -C dist/release -czf "dist/${ASSET_NAME}" traefik LICENSE.md CHANGELOG.md
-          sha256sum "dist/${ASSET_NAME}" > "dist/${CHECKSUM_NAME}"
-
-          echo "asset=dist/${ASSET_NAME}" >> "${GITHUB_OUTPUT}"
-          echo "checksum=dist/${CHECKSUM_NAME}" >> "${GITHUB_OUTPUT}"
-
-      - name: Create or update GitHub release
+      - name: Publish Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_NAME: ${{ inputs.release_name }}
-          TARGET_REF: ${{ inputs.ref }}
-          ASSET: ${{ steps.package.outputs.asset }}
-          CHECKSUM: ${{ steps.package.outputs.checksum }}
-        shell: bash
         run: |
-          if gh release view "${RELEASE_NAME}" >/dev/null 2>&1; then
-            gh release upload "${RELEASE_NAME}" "${ASSET}" "${CHECKSUM}" --clobber
-          else
-            gh release create "${RELEASE_NAME}" "${ASSET}" "${CHECKSUM}" --target "${TARGET_REF}" --title "${RELEASE_NAME}" --notes "${RELEASE_NAME}"
-          fi
+          cat dist/**/*_checksums.txt >> "dist/traefik_${VERSION}_checksums.txt"
+          rm dist/**/*_checksums.txt
+          tar cfz "dist/traefik-${VERSION}.src.tar.gz" \
+            --exclude-vcs \
+            --exclude .idea \
+            --exclude .github \
+            --exclude dist .
+
+          chown -R "$(id -u)":"$(id -g)" dist/
+          gh release create ${VERSION} ./dist/**/traefik*.{zip,tar.gz} ./dist/traefik*.{tar.gz,txt} --repo justinvdk/traefik --title ${VERSION} --notes ${VERSION} --latest=false
