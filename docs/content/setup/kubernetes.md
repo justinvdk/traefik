@@ -101,11 +101,12 @@ ports:
     port: 80
     nodePort: 30000
     # Instructs this entry point to redirect all traffic to the 'websecure' entry point
-    redirections:
-      entryPoint:
-        to: websecure
-        scheme: https
-        permanent: true
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
 
   # Defines the HTTPS entry point named 'websecure'
   websecure:
@@ -126,7 +127,7 @@ ingressRoute:
     middlewares:
       - name: dashboard-auth
 
-# Creates a BasiAuth Middleware and Secret for the Dashboard Security
+# Creates a BasicAuth Middleware and Secret for the Dashboard Security
 extraObjects:
   - apiVersion: v1
     kind: Secret
@@ -397,4 +398,4 @@ This enables OTel tracing and specifies the collector endpoint. Consult the [Tra
 
 This setup establishes Traefik with secure dashboard access and HTTPS redirection, along with pointers to enable observability & TLS.
 
-{!traefik-for-business-applications.md!}
+{% include-markdown "includes/traefik-for-business-applications.md" %}

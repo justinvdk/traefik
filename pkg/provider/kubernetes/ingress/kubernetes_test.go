@@ -551,6 +551,26 @@ func TestLoadConfigurationFromIngresses(t *testing.T) {
 			},
 		},
 		{
+			desc: "Ingress with defaultbackend with resource",
+			expected: &dynamic.Configuration{
+				HTTP: &dynamic.HTTPConfiguration{
+					Middlewares: map[string]*dynamic.Middleware{},
+					Routers:     map[string]*dynamic.Router{},
+					Services:    map[string]*dynamic.Service{},
+				},
+			},
+		},
+		{
+			desc: "Ingress with empty defaultbackend",
+			expected: &dynamic.Configuration{
+				HTTP: &dynamic.HTTPConfiguration{
+					Middlewares: map[string]*dynamic.Middleware{},
+					Routers:     map[string]*dynamic.Router{},
+					Services:    map[string]*dynamic.Service{},
+				},
+			},
+		},
+		{
 			desc: "Ingress with one service without endpoint",
 			expected: &dynamic.Configuration{
 				HTTP: &dynamic.HTTPConfiguration{
@@ -2337,7 +2357,7 @@ func TestIngressEndpointPublishedService(t *testing.T) {
 			ingress, err := kubeClient.NetworkingV1().Ingresses(metav1.NamespaceDefault).Get(t.Context(), "foo", metav1.GetOptions{})
 			require.NoError(t, err)
 
-			assert.Equal(t, test.expected, ingress.Status.LoadBalancer.Ingress)
+			assert.ElementsMatch(t, test.expected, ingress.Status.LoadBalancer.Ingress)
 		})
 	}
 }

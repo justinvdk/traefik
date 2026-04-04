@@ -225,10 +225,12 @@ The priority is directly equal to the length of the rule, and so the longest len
 
 A value of `0` for the priority is ignored: `priority: 0` means that the default rules length sorting is used.
 
+Negative priority values are supported.
+
 Traefik reserves a range of priorities for its internal routers, the maximum user-defined router priority value is:
 
-- `(MaxInt32 - 1000)` for 32-bit platforms,
-- `(MaxInt64 - 1000)` for 64-bit platforms.
+- `(MaxInt32 - 1000)` = `2147482647` for 32-bit platforms,
+- `(MaxInt64 - 1000)` = `9223372036854774807` for 64-bit platforms.
 
 ### Example
 

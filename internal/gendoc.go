@@ -187,7 +187,7 @@ THIS FILE MUST NOT BE EDITED BY HAND
 	}
 
 	if w.err != nil {
-		logger.Fatal().Err(err).Send()
+		logger.Fatal().Err(w.err).Send()
 	}
 }
 
@@ -196,7 +196,7 @@ type errWriter struct {
 	err error
 }
 
-func (ew *errWriter) writeln(a ...interface{}) {
+func (ew *errWriter) writeln(a ...any) {
 	if ew.err != nil {
 		return
 	}
