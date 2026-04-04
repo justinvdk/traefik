@@ -1,13 +1,14 @@
 name: Release Fork Assets
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Tag to release (example: v3.6.10)"
+      ref:
+        description: "Branch or commit to build (example: master)"
+        required: true
+        type: string
+      release_name:
+        description: "Release/tag name to publish (example: v3.6.10-p1)"
         required: true
         type: string
 
@@ -15,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref_name || inputs.tag }}
+  group: release-${{ inputs.release_name }}
   cancel-in-progress: true
 
 jobs:
@@ -23,37 +24,15 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Check out code
+      - name: Check out code at selected ref
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
-
-      - name: Resolve tag
-        id: tag
-        shell: bash
-        run: |
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
-          else
-            TAG="${GITHUB_REF_NAME}"
-          fi
-
-          if [ -z "${TAG}" ]; then
-            echo "Unable to resolve release tag" >&2
-            exit 1
-          fi
-
-          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
-
-      - name: Check out release tag
-        shell: bash
-        run: |
-          git fetch --tags --force
-          git checkout "${{ steps.tag.outputs.tag }}"
 
       - name: Build binary with WebUI
         env:
-          VERSION: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ inputs.release_name }}
           CODENAME: custom
           DOCKER_NON_INTERACTIVE: true
           IN_DOCKER: ""
@@ -64,10 +43,10 @@ jobs:
       - name: Package release asset
         id: package
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_NAME: ${{ inputs.release_name }}
         shell: bash
         run: |
-          VERSION_NO_V="${TAG#v}"
+          VERSION_NO_V="${RELEASE_NAME#v}"
           ASSET_NAME="traefik_v${VERSION_NO_V}_linux_amd64.tar.gz"
           CHECKSUM_NAME="traefik_v${VERSION_NO_V}_checksums.txt"
 
@@ -86,13 +65,14 @@ jobs:
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_NAME: ${{ inputs.release_name }}
+          TARGET_REF: ${{ inputs.ref }}
           ASSET: ${{ steps.package.outputs.asset }}
           CHECKSUM: ${{ steps.package.outputs.checksum }}
         shell: bash
         run: |
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" "${ASSET}" "${CHECKSUM}" --clobber
+          if gh release view "${RELEASE_NAME}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_NAME}" "${ASSET}" "${CHECKSUM}" --clobber
           else
-            gh release create "${TAG}" "${ASSET}" "${CHECKSUM}" --title "${TAG}" --notes "${TAG}"
+            gh release create "${RELEASE_NAME}" "${ASSET}" "${CHECKSUM}" --target "${TARGET_REF}" --title "${RELEASE_NAME}" --notes "${RELEASE_NAME}"
           fi
