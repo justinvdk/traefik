@@ -128,10 +128,11 @@ jobs:
       - build-webui
 
     steps:
-      # - name: Check out code
-      #   uses: actions/checkout@v5
-      #   with:
-      #     fetch-depth: 0
+      - name: Check out code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
 
       - name: Artifact webui
         uses: actions/download-artifact@v4
@@ -154,6 +155,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          mkdir -p dist
           tar cfz "dist/traefik-${VERSION}.src.tar.gz" \
             --exclude-vcs \
             --exclude .idea \
