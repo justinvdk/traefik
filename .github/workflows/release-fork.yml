@@ -1,0 +1,98 @@
+name: Release Fork Assets
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (example: v3.6.10)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          if [ -z "${TAG}" ]; then
+            echo "Unable to resolve release tag" >&2
+            exit 1
+          fi
+
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out release tag
+        shell: bash
+        run: |
+          git fetch --tags --force
+          git checkout "${{ steps.tag.outputs.tag }}"
+
+      - name: Build binary with WebUI
+        env:
+          VERSION: ${{ steps.tag.outputs.tag }}
+          CODENAME: custom
+          DOCKER_NON_INTERACTIVE: true
+          IN_DOCKER: ""
+        run: |
+          make clean-webui generate-webui
+          make binary
+
+      - name: Package release asset
+        id: package
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: |
+          VERSION_NO_V="${TAG#v}"
+          ASSET_NAME="traefik_v${VERSION_NO_V}_linux_amd64.tar.gz"
+          CHECKSUM_NAME="traefik_v${VERSION_NO_V}_checksums.txt"
+
+          rm -rf dist/release
+          mkdir -p dist/release
+          cp dist/traefik dist/release/traefik
+          cp LICENSE.md dist/release/LICENSE.md
+          cp CHANGELOG.md dist/release/CHANGELOG.md
+
+          tar -C dist/release -czf "dist/${ASSET_NAME}" traefik LICENSE.md CHANGELOG.md
+          sha256sum "dist/${ASSET_NAME}" > "dist/${CHECKSUM_NAME}"
+
+          echo "asset=dist/${ASSET_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "checksum=dist/${CHECKSUM_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          ASSET: ${{ steps.package.outputs.asset }}
+          CHECKSUM: ${{ steps.package.outputs.checksum }}
+        shell: bash
+        run: |
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ASSET}" "${CHECKSUM}" --clobber
+          else
+            gh release create "${TAG}" "${ASSET}" "${CHECKSUM}" --title "${TAG}" --notes "${TAG}"
+          fi
