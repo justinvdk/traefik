@@ -163,4 +163,4 @@ jobs:
             --exclude dist .
 
           chown -R "$(id -u)":"$(id -g)" dist/
-          gh release create ${VERSION} ./dist/traefik*.{tar.gz,txt} --repo justinvdk/traefik --title ${VERSION} --notes ${VERSION} --latest=false
+          gh release create ${VERSION} ./dist/traefik-${VERSION}.src.tar.gz --repo justinvdk/traefik --title ${VERSION} --notes ${VERSION} --latest=false
