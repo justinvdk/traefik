@@ -12,6 +12,7 @@ import (
 	"github.com/traefik/traefik/v3/pkg/config/dynamic"
 	"github.com/traefik/traefik/v3/pkg/tls"
 	"github.com/traefik/traefik/v3/pkg/types"
+	"k8s.io/utils/ptr"
 )
 
 func pointer[T any](v T) *T { return &v }
@@ -218,6 +219,12 @@ func Test_buildConfiguration(t *testing.T) {
 		"traefik/http/middlewares/Middleware05/compress/encodings":                                   "foobar, foobar",
 		"traefik/http/middlewares/Middleware05/compress/minResponseBodyBytes":                        "42",
 		"traefik/http/middlewares/Middleware18/retry/attempts":                                       "42",
+		"traefik/http/middlewares/Middleware18/retry/timeout":                                        "1s",
+		"traefik/http/middlewares/Middleware18/retry/initialInterval":                                "1s",
+		"traefik/http/middlewares/Middleware18/retry/maxRequestBodyBytes":                            "42",
+		"traefik/http/middlewares/Middleware18/retry/status":                                         "400,500-599",
+		"traefik/http/middlewares/Middleware18/retry/disableRetryOnNetworkError":                     "true",
+		"traefik/http/middlewares/Middleware18/retry/retryNonIdempotentMethod":                       "true",
 		"traefik/http/middlewares/Middleware19/stripPrefix/prefixes/0":                               "foobar",
 		"traefik/http/middlewares/Middleware19/stripPrefix/prefixes/1":                               "foobar",
 		"traefik/http/middlewares/Middleware19/stripPrefix/forceSlash":                               "true",
@@ -437,7 +444,7 @@ func Test_buildConfiguration(t *testing.T) {
 							InsecureSkipVerify: true,
 							CAOptional:         pointer(true),
 						},
-						TrustForwardHeader: true,
+						TrustForwardHeader: pointer(true),
 						AuthResponseHeaders: []string{
 							"foobar",
 							"foobar",
@@ -467,7 +474,13 @@ func Test_buildConfiguration(t *testing.T) {
 				},
 				"Middleware18": {
 					Retry: &dynamic.Retry{
-						Attempts: 42,
+						Attempts:                   42,
+						Timeout:                    ptypes.Duration(time.Second),
+						InitialInterval:            ptypes.Duration(time.Second),
+						MaxRequestBodyBytes:        pointer[int64](42),
+						Status:                     []string{"400", "500-599"},
+						DisableRetryOnNetworkError: true,
+						RetryNonIdempotentMethod:   true,
 					},
 				},
 				"Middleware16": {
@@ -603,7 +616,7 @@ func Test_buildConfiguration(t *testing.T) {
 							"foobar",
 							"foobar",
 						},
-						AccessControlMaxAge: 42,
+						AccessControlMaxAge: ptr.To(int64(42)),
 						AddVaryHeader:       true,
 						AllowedHosts: []string{
 							"foobar",

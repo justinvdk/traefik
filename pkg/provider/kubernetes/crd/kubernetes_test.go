@@ -259,7 +259,7 @@ func TestLoadIngressRouteTCPs(t *testing.T) {
 		},
 		{
 			desc:  "Simple Ingress Route, with foo entrypoint and crossprovider middleware",
-			paths: []string{"tcp/services.yml", "tcp/with_middleware_crossprovider.yml"},
+			paths: []string{"tcp/services.yml", "tcp/with_middleware_cross_provider.yml"},
 			expected: &dynamic.Configuration{
 				UDP: &dynamic.UDPConfiguration{
 					Routers:  map[string]*dynamic.UDPRouter{},
@@ -1301,6 +1301,135 @@ func TestLoadIngressRouteTCPs(t *testing.T) {
 			},
 		},
 		{
+			desc:         "Simple TCP Ingress Route, with ingressClassName",
+			paths:        []string{"tcp/services.yml", "tcp/with_ingressclassname.yml"},
+			ingressClass: "traefik-lb",
+			expected: &dynamic.Configuration{
+				TLS: &dynamic.TLSConfiguration{},
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TCP: &dynamic.TCPConfiguration{
+					Routers: map[string]*dynamic.TCPRouter{
+						"default-test.route-fdd3e9338e47a45efefc": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test.route-fdd3e9338e47a45efefc",
+							Rule:        "HostSNI(`foo.com`)",
+						},
+					},
+					Middlewares: map[string]*dynamic.TCPMiddleware{},
+					Services: map[string]*dynamic.TCPService{
+						"default-test.route-fdd3e9338e47a45efefc": {
+							LoadBalancer: &dynamic.TCPServersLoadBalancer{
+								Servers: []dynamic.TCPServer{
+									{
+										Address: "10.10.0.1:8000",
+									},
+									{
+										Address: "10.10.0.2:8000",
+									},
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers:           map[string]*dynamic.Router{},
+					Middlewares:       map[string]*dynamic.Middleware{},
+					Services:          map[string]*dynamic.Service{},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
+			desc:         "Simple TCP Ingress Route, with ingressClassName and deprecated annotation",
+			paths:        []string{"tcp/services.yml", "tcp/with_ingressclassname_and_deprecated_annotation.yml"},
+			ingressClass: "traefik-lb",
+			expected: &dynamic.Configuration{
+				TLS: &dynamic.TLSConfiguration{},
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TCP: &dynamic.TCPConfiguration{
+					Routers: map[string]*dynamic.TCPRouter{
+						"default-test.route-fdd3e9338e47a45efefc": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test.route-fdd3e9338e47a45efefc",
+							Rule:        "HostSNI(`foo.com`)",
+						},
+					},
+					Middlewares: map[string]*dynamic.TCPMiddleware{},
+					Services: map[string]*dynamic.TCPService{
+						"default-test.route-fdd3e9338e47a45efefc": {
+							LoadBalancer: &dynamic.TCPServersLoadBalancer{
+								Servers: []dynamic.TCPServer{
+									{
+										Address: "10.10.0.1:8000",
+									},
+									{
+										Address: "10.10.0.2:8000",
+									},
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers:           map[string]*dynamic.Router{},
+					Middlewares:       map[string]*dynamic.Middleware{},
+					Services:          map[string]*dynamic.Service{},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
+			desc:         "Simple TCP Ingress Route, with deprecated annotation only",
+			paths:        []string{"tcp/services.yml", "tcp/with_deprecated_annotation_only.yml"},
+			ingressClass: "traefik-lb",
+			expected: &dynamic.Configuration{
+				TLS: &dynamic.TLSConfiguration{},
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TCP: &dynamic.TCPConfiguration{
+					Routers: map[string]*dynamic.TCPRouter{
+						"default-test.route-fdd3e9338e47a45efefc": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test.route-fdd3e9338e47a45efefc",
+							Rule:        "HostSNI(`foo.com`)",
+						},
+					},
+					Middlewares: map[string]*dynamic.TCPMiddleware{},
+					Services: map[string]*dynamic.TCPService{
+						"default-test.route-fdd3e9338e47a45efefc": {
+							LoadBalancer: &dynamic.TCPServersLoadBalancer{
+								Servers: []dynamic.TCPServer{
+									{
+										Address: "10.10.0.1:8000",
+									},
+									{
+										Address: "10.10.0.2:8000",
+									},
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers:           map[string]*dynamic.Router{},
+					Middlewares:       map[string]*dynamic.Middleware{},
+					Services:          map[string]*dynamic.Service{},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
 			desc: "Ingress Route with IPv6 backends",
 			paths: []string{
 				"services.yml", "with_ipv6.yml",
@@ -1684,12 +1813,13 @@ func TestLoadIngressRouteTCPs(t *testing.T) {
 
 func TestLoadIngressRoutes(t *testing.T) {
 	testCases := []struct {
-		desc                string
-		ingressClass        string
-		paths               []string
-		expected            *dynamic.Configuration
-		allowCrossNamespace bool
-		allowEmptyServices  bool
+		desc                    string
+		ingressClass            string
+		paths                   []string
+		expected                *dynamic.Configuration
+		allowCrossNamespace     bool
+		allowEmptyServices      bool
+		crossProviderNamespaces []string
 	}{
 		{
 			desc: "Empty",
@@ -1975,9 +2105,10 @@ func TestLoadIngressRoutes(t *testing.T) {
 			},
 		},
 		{
-			desc:                "Simple Ingress Route with middleware crossprovider",
-			allowCrossNamespace: true,
-			paths:               []string{"services.yml", "with_middleware_crossprovider.yml"},
+			desc:                    "Simple Ingress Route with middleware crossprovider",
+			crossProviderNamespaces: []string{"default"},
+			allowCrossNamespace:     true,
+			paths:                   []string{"services.yml", "with_middleware_cross_provider.yml"},
 			expected: &dynamic.Configuration{
 				UDP: &dynamic.UDPConfiguration{
 					Routers:  map[string]*dynamic.UDPRouter{},
@@ -3151,6 +3282,71 @@ func TestLoadIngressRoutes(t *testing.T) {
 			},
 		},
 		{
+			desc:  "TraefikService with service middleware",
+			paths: []string{"services.yml", "with_traefik_service_middleware.yml"},
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers: map[string]*dynamic.Router{
+						"default-test-route-6b204d94623b3df4370c": {
+							EntryPoints: []string{"web"},
+							Service:     "default-test-weighted",
+							Rule:        "Host(`foo.com`) && PathPrefix(`/bar`)",
+							Priority:    12,
+						},
+					},
+					Middlewares: map[string]*dynamic.Middleware{
+						"default-stripprefix": {
+							StripPrefix: &dynamic.StripPrefix{
+								Prefixes: []string{"/tobestripped"},
+							},
+						},
+					},
+					Services: map[string]*dynamic.Service{
+						"default-test-weighted": {
+							Weighted: &dynamic.WeightedRoundRobin{
+								Services: []dynamic.WRRService{
+									{
+										Name:   "default-whoami-80",
+										Weight: pointer(1),
+									},
+								},
+							},
+						},
+						"default-whoami-80": {
+							Middlewares: []string{"default-stripprefix"},
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:80",
+									},
+									{
+										URL: "http://10.10.0.2:80",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
 			desc:  "one kube services in a highest random weight",
 			paths: []string{"with_highest_random_weight.yml"},
 			expected: &dynamic.Configuration{
@@ -3202,6 +3398,245 @@ func TestLoadIngressRoutes(t *testing.T) {
 							},
 						},
 						"default-whoami2-8080": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.3:8080",
+									},
+									{
+										URL: "http://10.10.0.4:8080",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
+			desc:  "one kube service in a failover",
+			paths: []string{"with_failover.yml"},
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers: map[string]*dynamic.Router{
+						"default-test-route-77c62dfe9517144aeeaa": {
+							EntryPoints: []string{"web"},
+							Service:     "default-failover1",
+							Rule:        "Host(`foo.com`) && PathPrefix(`/foo`)",
+							Priority:    12,
+						},
+					},
+					Middlewares: map[string]*dynamic.Middleware{},
+					Services: map[string]*dynamic.Service{
+						"default-failover1": {
+							Failover: &dynamic.Failover{
+								Service:  "default-whoami5-8080",
+								Fallback: "default-whoami4-8080",
+								Errors:   &dynamic.FailoverError{},
+							},
+						},
+						"default-whoami4-8080": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:8080",
+									},
+									{
+										URL: "http://10.10.0.2:8080",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+						"default-whoami5-8080": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.3:8080",
+									},
+									{
+										URL: "http://10.10.0.4:8080",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
+			desc:  "weighted services in a failover",
+			paths: []string{"with_failover2.yml"},
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers: map[string]*dynamic.Router{
+						"default-test-route-77c62dfe9517144aeeaa": {
+							EntryPoints: []string{"web"},
+							Service:     "default-failover1",
+							Rule:        "Host(`foo.com`) && PathPrefix(`/foo`)",
+							Priority:    12,
+						},
+					},
+					Middlewares: map[string]*dynamic.Middleware{},
+					Services: map[string]*dynamic.Service{
+						"default-failover1": {
+							Failover: &dynamic.Failover{
+								Service:  "default-wrr1",
+								Fallback: "default-wrr2",
+								Errors:   &dynamic.FailoverError{},
+							},
+						},
+						"default-wrr1": {
+							Weighted: &dynamic.WeightedRoundRobin{
+								Services: []dynamic.WRRService{
+									{
+										Name:   "default-whoami4-8080",
+										Weight: pointer(1),
+									},
+								},
+							},
+						},
+						"default-wrr2": {
+							Weighted: &dynamic.WeightedRoundRobin{
+								Services: []dynamic.WRRService{
+									{
+										Name:   "default-whoami5-8080",
+										Weight: pointer(1),
+									},
+								},
+							},
+						},
+						"default-whoami4-8080": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:8080",
+									},
+									{
+										URL: "http://10.10.0.2:8080",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+						"default-whoami5-8080": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.3:8080",
+									},
+									{
+										URL: "http://10.10.0.4:8080",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
+			desc:  "failover with errors configuration",
+			paths: []string{"with_failover_errors.yml"},
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers: map[string]*dynamic.Router{
+						"default-test-route-77c62dfe9517144aeeaa": {
+							EntryPoints: []string{"web"},
+							Service:     "default-failover1",
+							Rule:        "Host(`foo.com`) && PathPrefix(`/foo`)",
+							Priority:    12,
+						},
+					},
+					Middlewares: map[string]*dynamic.Middleware{},
+					Services: map[string]*dynamic.Service{
+						"default-failover1": {
+							Failover: &dynamic.Failover{
+								Service:  "default-whoami5-8080",
+								Fallback: "default-whoami4-8080",
+								Errors: &dynamic.FailoverError{
+									Status:              []string{"500-504", "404"},
+									MaxRequestBodyBytes: pointer[int64](1048576),
+								},
+							},
+						},
+						"default-whoami4-8080": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:8080",
+									},
+									{
+										URL: "http://10.10.0.2:8080",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+						"default-whoami5-8080": {
 							LoadBalancer: &dynamic.ServersLoadBalancer{
 								Strategy: dynamic.BalancerStrategyWRR,
 								Servers: []dynamic.Server{
@@ -4132,6 +4567,153 @@ func TestLoadIngressRoutes(t *testing.T) {
 			},
 		},
 		{
+			desc:         "Simple Ingress Route, with ingressClassName",
+			paths:        []string{"services.yml", "with_ingressclassname.yml"},
+			ingressClass: "traefik-lb",
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers: map[string]*dynamic.Router{
+						"default-test-route-6b204d94623b3df4370c": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test-route-6b204d94623b3df4370c",
+							Rule:        "Host(`foo.com`) && PathPrefix(`/bar`)",
+							Priority:    12,
+						},
+					},
+					Middlewares: map[string]*dynamic.Middleware{},
+					Services: map[string]*dynamic.Service{
+						"default-test-route-6b204d94623b3df4370c": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:80",
+									},
+									{
+										URL: "http://10.10.0.2:80",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
+			desc:         "Simple Ingress Route, with ingressClassName and deprecated annotation",
+			paths:        []string{"services.yml", "with_ingressclassname_and_deprecated_annotation.yml"},
+			ingressClass: "traefik-lb",
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers: map[string]*dynamic.Router{
+						"default-test-route-6b204d94623b3df4370c": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test-route-6b204d94623b3df4370c",
+							Rule:        "Host(`foo.com`) && PathPrefix(`/bar`)",
+							Priority:    12,
+						},
+					},
+					Middlewares: map[string]*dynamic.Middleware{},
+					Services: map[string]*dynamic.Service{
+						"default-test-route-6b204d94623b3df4370c": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:80",
+									},
+									{
+										URL: "http://10.10.0.2:80",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
+			desc:         "Simple Ingress Route, with deprecated annotation only",
+			paths:        []string{"services.yml", "with_deprecated_annotation_only.yml"},
+			ingressClass: "traefik-lb",
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers: map[string]*dynamic.Router{
+						"default-test-route-6b204d94623b3df4370c": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test-route-6b204d94623b3df4370c",
+							Rule:        "Host(`foo.com`) && PathPrefix(`/bar`)",
+							Priority:    12,
+						},
+					},
+					Middlewares: map[string]*dynamic.Middleware{},
+					Services: map[string]*dynamic.Service{
+						"default-test-route-6b204d94623b3df4370c": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:80",
+									},
+									{
+										URL: "http://10.10.0.2:80",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
 			desc:  "Simple Ingress Route, with basic auth middleware",
 			paths: []string{"services.yml", "with_auth.yml"},
 			expected: &dynamic.Configuration{
@@ -4373,6 +4955,65 @@ func TestLoadIngressRoutes(t *testing.T) {
 					},
 					Services: map[string]*dynamic.Service{
 						"default-errorpage-errorpage-service": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:80",
+									},
+									{
+										URL: "http://10.10.0.2:80",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+					},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+			},
+		},
+		{
+			desc:  "Error page middleware referencing a TraefikService",
+			paths: []string{"services.yml", "with_error_page_traefik_service.yml"},
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers:  map[string]*dynamic.UDPRouter{},
+					Services: map[string]*dynamic.UDPService{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers: map[string]*dynamic.Router{},
+					Middlewares: map[string]*dynamic.Middleware{
+						"default-errorpage": {
+							Errors: &dynamic.ErrorPage{
+								Status:  []string{"404", "500"},
+								Service: "default-errorpage-wrr",
+								Query:   "query",
+							},
+						},
+					},
+					Services: map[string]*dynamic.Service{
+						"default-errorpage-wrr": {
+							Weighted: &dynamic.WeightedRoundRobin{
+								Services: []dynamic.WRRService{
+									{
+										Name:   "default-whoami-80",
+										Weight: func(i int) *int { return &i }(1),
+									},
+								},
+							},
+						},
+						"default-whoami-80": {
 							LoadBalancer: &dynamic.ServersLoadBalancer{
 								Strategy: dynamic.BalancerStrategyWRR,
 								Servers: []dynamic.Server{
@@ -4818,6 +5459,9 @@ func TestLoadIngressRoutes(t *testing.T) {
 								{CertFile: "TESTCERT2", KeyFile: "TESTKEY2"},
 								{CertFile: "TESTCERT3", KeyFile: "TESTKEY3"},
 							},
+							CipherSuites:        []string{"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"},
+							MinVersion:          "VersionTLS11",
+							MaxVersion:          "VersionTLS12",
 							MaxIdleConnsPerHost: 42,
 							DisableHTTP2:        true,
 							ForwardingTimeouts: &dynamic.ForwardingTimeouts{
@@ -5747,6 +6391,7 @@ func TestLoadIngressRoutes(t *testing.T) {
 				AllowCrossNamespace:       test.allowCrossNamespace,
 				AllowExternalNameServices: true,
 				AllowEmptyServices:        test.allowEmptyServices,
+				CrossProviderNamespaces:   test.crossProviderNamespaces,
 			}
 
 			conf := p.loadConfigurationFromCRD(t.Context(), client)
@@ -5904,6 +6549,132 @@ func TestLoadIngressRouteUDPs(t *testing.T) {
 					Middlewares:       map[string]*dynamic.TCPMiddleware{},
 					Services:          map[string]*dynamic.TCPService{},
 					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+			},
+		},
+		{
+			desc:         "Simple UDP Ingress Route, with ingressClassName",
+			paths:        []string{"udp/services.yml", "udp/with_ingressclassname.yml"},
+			ingressClass: "traefik-lb",
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers: map[string]*dynamic.UDPRouter{
+						"default-test.route-0": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test.route-0",
+						},
+					},
+					Services: map[string]*dynamic.UDPService{
+						"default-test.route-0": {
+							LoadBalancer: &dynamic.UDPServersLoadBalancer{
+								Servers: []dynamic.UDPServer{
+									{
+										Address: "10.10.0.1:8000",
+									},
+									{
+										Address: "10.10.0.2:8000",
+									},
+								},
+							},
+						},
+					},
+				},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers:           map[string]*dynamic.Router{},
+					Middlewares:       map[string]*dynamic.Middleware{},
+					Services:          map[string]*dynamic.Service{},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+			},
+		},
+		{
+			desc:         "Simple UDP Ingress Route, with ingressClassName and deprecated annotation",
+			paths:        []string{"udp/services.yml", "udp/with_ingressclassname_and_deprecated_annotation.yml"},
+			ingressClass: "traefik-lb",
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers: map[string]*dynamic.UDPRouter{
+						"default-test.route-0": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test.route-0",
+						},
+					},
+					Services: map[string]*dynamic.UDPService{
+						"default-test.route-0": {
+							LoadBalancer: &dynamic.UDPServersLoadBalancer{
+								Servers: []dynamic.UDPServer{
+									{
+										Address: "10.10.0.1:8000",
+									},
+									{
+										Address: "10.10.0.2:8000",
+									},
+								},
+							},
+						},
+					},
+				},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers:           map[string]*dynamic.Router{},
+					Middlewares:       map[string]*dynamic.Middleware{},
+					Services:          map[string]*dynamic.Service{},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
+				},
+				TLS: &dynamic.TLSConfiguration{},
+			},
+		},
+		{
+			desc:         "Simple UDP Ingress Route, with deprecated annotation only",
+			paths:        []string{"udp/services.yml", "udp/with_deprecated_annotation_only.yml"},
+			ingressClass: "traefik-lb",
+			expected: &dynamic.Configuration{
+				UDP: &dynamic.UDPConfiguration{
+					Routers: map[string]*dynamic.UDPRouter{
+						"default-test.route-0": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test.route-0",
+						},
+					},
+					Services: map[string]*dynamic.UDPService{
+						"default-test.route-0": {
+							LoadBalancer: &dynamic.UDPServersLoadBalancer{
+								Servers: []dynamic.UDPServer{
+									{
+										Address: "10.10.0.1:8000",
+									},
+									{
+										Address: "10.10.0.2:8000",
+									},
+								},
+							},
+						},
+					},
+				},
+				TCP: &dynamic.TCPConfiguration{
+					Routers:           map[string]*dynamic.TCPRouter{},
+					Middlewares:       map[string]*dynamic.TCPMiddleware{},
+					Services:          map[string]*dynamic.TCPService{},
+					ServersTransports: map[string]*dynamic.TCPServersTransport{},
+				},
+				HTTP: &dynamic.HTTPConfiguration{
+					Routers:           map[string]*dynamic.Router{},
+					Middlewares:       map[string]*dynamic.Middleware{},
+					Services:          map[string]*dynamic.Service{},
+					ServersTransports: map[string]*dynamic.ServersTransport{},
 				},
 				TLS: &dynamic.TLSConfiguration{},
 			},
@@ -6696,6 +7467,16 @@ func TestCrossNamespace(t *testing.T) {
 							Priority:    12,
 							Middlewares: []string{"default-test-errorpage"},
 						},
+						"default-test-crossnamespace-route-4932ffbbcd99474df323": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test-crossnamespace-route-4932ffbbcd99474df323",
+							Rule:        "Host(`foo.com`) && PathPrefix(`/chain`)",
+							Priority:    12,
+							Middlewares: []string{
+								"default-test-chain",
+								"default-test-chain-cross-provider",
+							},
+						},
 					},
 					Middlewares: map[string]*dynamic.Middleware{
 						"cross-ns-stripprefix": {
@@ -6706,6 +7487,23 @@ func TestCrossNamespace(t *testing.T) {
 					},
 					Services: map[string]*dynamic.Service{
 						"default-test-crossnamespace-route-9313b71dbe6a649d5049": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:80",
+									},
+									{
+										URL: "http://10.10.0.2:80",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+						"default-test-crossnamespace-route-4932ffbbcd99474df323": {
 							LoadBalancer: &dynamic.ServersLoadBalancer{
 								Strategy: dynamic.BalancerStrategyWRR,
 								Servers: []dynamic.Server{
@@ -6768,6 +7566,16 @@ func TestCrossNamespace(t *testing.T) {
 							Priority:    12,
 							Middlewares: []string{"cross-ns-stripprefix@kubernetescrd"},
 						},
+						"default-test-crossnamespace-route-4932ffbbcd99474df323": {
+							EntryPoints: []string{"foo"},
+							Service:     "default-test-crossnamespace-route-4932ffbbcd99474df323",
+							Rule:        "Host(`foo.com`) && PathPrefix(`/chain`)",
+							Priority:    12,
+							Middlewares: []string{
+								"default-test-chain",
+								"default-test-chain-cross-provider",
+							},
+						},
 					},
 					Middlewares: map[string]*dynamic.Middleware{
 						"cross-ns-stripprefix": {
@@ -6780,6 +7588,16 @@ func TestCrossNamespace(t *testing.T) {
 								Status:  []string{"500-599"},
 								Service: "default-test-errorpage-errorpage-service",
 								Query:   "/{status}.html",
+							},
+						},
+						"default-test-chain": {
+							Chain: &dynamic.Chain{
+								Middlewares: []string{"cross-ns-stripprefix"},
+							},
+						},
+						"default-test-chain-cross-provider": {
+							Chain: &dynamic.Chain{
+								Middlewares: []string{"other-middleware@kubernetescrd"},
 							},
 						},
 					},
@@ -6836,6 +7654,23 @@ func TestCrossNamespace(t *testing.T) {
 							},
 						},
 						"default-test-crossnamespace-route-a1963878aac7331b7950": {
+							LoadBalancer: &dynamic.ServersLoadBalancer{
+								Strategy: dynamic.BalancerStrategyWRR,
+								Servers: []dynamic.Server{
+									{
+										URL: "http://10.10.0.1:80",
+									},
+									{
+										URL: "http://10.10.0.2:80",
+									},
+								},
+								PassHostHeader: pointer(true),
+								ResponseForwarding: &dynamic.ResponseForwarding{
+									FlushInterval: ptypes.Duration(100 * time.Millisecond),
+								},
+							},
+						},
+						"default-test-crossnamespace-route-4932ffbbcd99474df323": {
 							LoadBalancer: &dynamic.ServersLoadBalancer{
 								Strategy: dynamic.BalancerStrategyWRR,
 								Servers: []dynamic.Server{
@@ -7840,6 +8675,392 @@ func TestCrossNamespace(t *testing.T) {
 
 			conf := p.loadConfigurationFromCRD(t.Context(), client)
 			assert.Equal(t, test.expected, conf)
+		})
+	}
+}
+
+func Test_isCrossProviderNamespaceAllowed(t *testing.T) {
+	testCases := []struct {
+		desc      string
+		allowList []string
+		namespace string
+		want      bool
+	}{
+		{desc: "nil allowList allows any namespace", allowList: nil, namespace: "ns-a", want: true},
+		{desc: "empty allowList denies every namespace", allowList: []string{}, namespace: "ns-a", want: false},
+		{desc: "namespace in allowList is accepted", allowList: []string{"ns-a"}, namespace: "ns-a", want: true},
+		{desc: "namespace not in allowList is rejected", allowList: []string{"ns-b"}, namespace: "ns-a", want: false},
+		{desc: "namespace among multiple allowed entries is accepted", allowList: []string{"ns-a", "ns-b"}, namespace: "ns-b", want: true},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+			got := isCrossProviderNamespaceAllowed(test.allowList, test.namespace)
+			assert.Equal(t, test.want, got)
+		})
+	}
+}
+
+// TestCrossProviderNamespaces_HTTPMiddleware verifies that the
+// CrossProviderNamespaces option gates middleware references.
+// Plain in-namespace middleware references are not affected.
+func TestCrossProviderNamespaces_HTTPMiddleware(t *testing.T) {
+	testCases := []struct {
+		desc                    string
+		crossProviderNamespaces []string
+		wantMiddlewares         []string
+		wantRouterDropped       bool
+	}{
+		{
+			desc:                    "nil: cross-provider middleware refs are accepted (backward compatible)",
+			crossProviderNamespaces: nil,
+			wantMiddlewares:         []string{"default-stripprefix", "foo-addprefix", "basicauth@file", "redirect@file"},
+		},
+		{
+			desc:                    "empty list: cross-provider middleware refs are rejected, IngressRoute is dropped",
+			crossProviderNamespaces: []string{},
+			wantRouterDropped:       true,
+		},
+		{
+			desc:                    "namespace allowed: cross-provider middleware refs are accepted",
+			crossProviderNamespaces: []string{"default"},
+			wantMiddlewares:         []string{"default-stripprefix", "foo-addprefix", "basicauth@file", "redirect@file"},
+		},
+		{
+			desc:                    "namespace not allowed: cross-provider middleware refs are rejected, IngressRoute is dropped",
+			crossProviderNamespaces: []string{"other"},
+			wantRouterDropped:       true,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			k8sObjects, crdObjects := readResources(t, []string{"services.yml", "with_middleware_cross_provider.yml"})
+
+			kubeClient := kubefake.NewClientset(k8sObjects...)
+			crdClient := traefikcrdfake.NewClientset(crdObjects...)
+
+			client := newClientImpl(kubeClient, crdClient)
+
+			stopCh := make(chan struct{})
+
+			eventCh, err := client.WatchAll(nil, stopCh)
+			require.NoError(t, err)
+
+			if k8sObjects != nil || crdObjects != nil {
+				// just wait for the first event
+				<-eventCh
+			}
+
+			p := Provider{
+				AllowCrossNamespace:     true,
+				CrossProviderNamespaces: test.crossProviderNamespaces,
+			}
+
+			conf := p.loadConfigurationFromCRD(t.Context(), client)
+
+			router, ok := conf.HTTP.Routers["default-test2-route-23c7f4c450289ee29016"]
+			if test.wantRouterDropped {
+				assert.False(t, ok)
+				return
+			}
+
+			assert.True(t, ok)
+			assert.Equal(t, test.wantMiddlewares, router.Middlewares)
+		})
+	}
+}
+
+// TestCrossProviderNamespaces_HTTPServiceTransitivity verifies that the option for a TraefikService chain
+// (here: IngressRoute -> Mirror / Weighted TraefikService -> @file service).
+func TestCrossProviderNamespaces_HTTPServiceTransitivity(t *testing.T) {
+	testCases := []struct {
+		desc                    string
+		crossProviderNamespaces []string
+		wantMirrorService       bool
+		wantWeightedService     bool
+	}{
+		{
+			desc:                    "nil: cross-provider service refs accepted (backward compatible)",
+			crossProviderNamespaces: nil,
+			wantMirrorService:       true,
+			wantWeightedService:     true,
+		},
+		{
+			desc:                    "empty list: both Mirror and Weighted TraefikServices are rejected",
+			crossProviderNamespaces: []string{},
+			wantMirrorService:       false,
+			wantWeightedService:     false,
+		},
+		{
+			desc:                    "only the Mirror's namespace is allowed: Weighted is still rejected",
+			crossProviderNamespaces: []string{"foo"},
+			wantMirrorService:       true,
+			wantWeightedService:     false,
+		},
+		{
+			desc:                    "only the Weighted's namespace is allowed: Mirror is still rejected",
+			crossProviderNamespaces: []string{"bar"},
+			wantMirrorService:       false,
+			wantWeightedService:     true,
+		},
+		{
+			desc:                    "both namespaces allowed: both TraefikServices are accepted",
+			crossProviderNamespaces: []string{"foo", "bar"},
+			wantMirrorService:       true,
+			wantWeightedService:     true,
+		},
+		{
+			desc:                    "originating IngressRoute namespace alone is not enough: TraefikService namespace must also be allowed",
+			crossProviderNamespaces: []string{"default"},
+			wantMirrorService:       false,
+			wantWeightedService:     false,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			k8sObjects, crdObjects := readResources(t, []string{"services.yml", "with_service_cross_provider.yml"})
+
+			kubeClient := kubefake.NewClientset(k8sObjects...)
+			crdClient := traefikcrdfake.NewClientset(crdObjects...)
+
+			client := newClientImpl(kubeClient, crdClient)
+
+			stopCh := make(chan struct{})
+
+			eventCh, err := client.WatchAll(nil, stopCh)
+			require.NoError(t, err)
+
+			if k8sObjects != nil || crdObjects != nil {
+				// just wait for the first event
+				<-eventCh
+			}
+
+			p := Provider{
+				AllowCrossNamespace:     true,
+				CrossProviderNamespaces: test.crossProviderNamespaces,
+			}
+
+			conf := p.loadConfigurationFromCRD(t.Context(), client)
+
+			_, mirrorOK := conf.HTTP.Services["foo-mirror-cp"]
+			_, weightedOK := conf.HTTP.Services["bar-weighted-cp"]
+
+			assert.Equal(t, test.wantMirrorService, mirrorOK)
+			assert.Equal(t, test.wantWeightedService, weightedOK)
+		})
+	}
+}
+
+// TestCrossProviderNamespaces_HTTPTLSOption verifies that the
+// CrossProviderNamespaces option gates @file references in IngressRoute tls.options.
+func TestCrossProviderNamespaces_HTTPTLSOption(t *testing.T) {
+	testCases := []struct {
+		desc                    string
+		crossProviderNamespaces []string
+		wantRouterDropped       bool
+	}{
+		{
+			desc:                    "nil: cross-provider TLSOption ref is accepted (backward compatible)",
+			crossProviderNamespaces: nil,
+		},
+		{
+			desc:                    "empty list: cross-provider TLSOption ref is rejected, IngressRoute is dropped",
+			crossProviderNamespaces: []string{},
+			wantRouterDropped:       true,
+		},
+		{
+			desc:                    "namespace allowed: cross-provider TLSOption ref is accepted",
+			crossProviderNamespaces: []string{"default"},
+		},
+		{
+			desc:                    "namespace not allowed: cross-provider TLSOption ref is rejected, IngressRoute is dropped",
+			crossProviderNamespaces: []string{"other"},
+			wantRouterDropped:       true,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			k8sObjects, crdObjects := readResources(t, []string{"services.yml", "with_tls_option_cross_provider.yml"})
+
+			kubeClient := kubefake.NewClientset(k8sObjects...)
+			crdClient := traefikcrdfake.NewClientset(crdObjects...)
+
+			client := newClientImpl(kubeClient, crdClient)
+
+			stopCh := make(chan struct{})
+
+			eventCh, err := client.WatchAll(nil, stopCh)
+			require.NoError(t, err)
+
+			if k8sObjects != nil || crdObjects != nil {
+				// just wait for the first event
+				<-eventCh
+			}
+
+			p := Provider{
+				AllowCrossNamespace:     true,
+				CrossProviderNamespaces: test.crossProviderNamespaces,
+			}
+
+			conf := p.loadConfigurationFromCRD(t.Context(), client)
+
+			router, ok := conf.HTTP.Routers["default-test-route-6b204d94623b3df4370c"]
+			if test.wantRouterDropped {
+				assert.False(t, ok)
+				return
+			}
+
+			require.True(t, ok)
+			require.NotNil(t, router.TLS)
+			assert.Equal(t, "foo@file", router.TLS.Options)
+		})
+	}
+}
+
+// TestCrossProviderNamespaces_TCPTLSOption verifies that the
+// CrossProviderNamespaces option gates @file references in IngressRouteTCP tls.options.
+func TestCrossProviderNamespaces_TCPTLSOption(t *testing.T) {
+	testCases := []struct {
+		desc                    string
+		crossProviderNamespaces []string
+		wantRouterDropped       bool
+	}{
+		{
+			desc:                    "nil: cross-provider TLSOption ref is accepted (backward compatible)",
+			crossProviderNamespaces: nil,
+		},
+		{
+			desc:                    "empty list: cross-provider TLSOption ref is rejected, IngressRouteTCP is dropped",
+			crossProviderNamespaces: []string{},
+			wantRouterDropped:       true,
+		},
+		{
+			desc:                    "namespace allowed: cross-provider TLSOption ref is accepted",
+			crossProviderNamespaces: []string{"default"},
+		},
+		{
+			desc:                    "namespace not allowed: cross-provider TLSOption ref is rejected, IngressRouteTCP is dropped",
+			crossProviderNamespaces: []string{"other"},
+			wantRouterDropped:       true,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			k8sObjects, crdObjects := readResources(t, []string{"tcp/services.yml", "tcp/with_tls_options_cross_provider.yml"})
+
+			kubeClient := kubefake.NewClientset(k8sObjects...)
+			crdClient := traefikcrdfake.NewClientset(crdObjects...)
+
+			client := newClientImpl(kubeClient, crdClient)
+
+			stopCh := make(chan struct{})
+
+			eventCh, err := client.WatchAll(nil, stopCh)
+			require.NoError(t, err)
+
+			if k8sObjects != nil || crdObjects != nil {
+				// just wait for the first event
+				<-eventCh
+			}
+
+			p := Provider{
+				AllowCrossNamespace:     true,
+				CrossProviderNamespaces: test.crossProviderNamespaces,
+			}
+
+			conf := p.loadConfigurationFromCRD(t.Context(), client)
+
+			router, ok := conf.TCP.Routers["default-test.route-fdd3e9338e47a45efefc"]
+			if test.wantRouterDropped {
+				assert.False(t, ok)
+				return
+			}
+
+			require.True(t, ok)
+			require.NotNil(t, router.TLS)
+			assert.Equal(t, "foo@file", router.TLS.Options)
+		})
+	}
+}
+
+// TestCrossProviderNamespaces_HTTPServersTransport verifies that the
+// CrossProviderNamespaces option gates @file references in service.serversTransport.
+func TestCrossProviderNamespaces_HTTPServersTransport(t *testing.T) {
+	testCases := []struct {
+		desc                    string
+		crossProviderNamespaces []string
+		wantServiceDropped      bool
+	}{
+		{
+			desc:                    "nil: cross-provider ServersTransport ref is accepted (backward compatible)",
+			crossProviderNamespaces: nil,
+		},
+		{
+			desc:                    "empty list: cross-provider ServersTransport ref is rejected, service is dropped",
+			crossProviderNamespaces: []string{},
+			wantServiceDropped:      true,
+		},
+		{
+			desc:                    "namespace allowed: cross-provider ServersTransport ref is accepted",
+			crossProviderNamespaces: []string{"default"},
+		},
+		{
+			desc:                    "namespace not allowed: cross-provider ServersTransport ref is rejected, service is dropped",
+			crossProviderNamespaces: []string{"other"},
+			wantServiceDropped:      true,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.desc, func(t *testing.T) {
+			t.Parallel()
+
+			k8sObjects, crdObjects := readResources(t, []string{"services.yml", "with_servers_transport_cross_provider.yml"})
+
+			kubeClient := kubefake.NewClientset(k8sObjects...)
+			crdClient := traefikcrdfake.NewClientset(crdObjects...)
+
+			client := newClientImpl(kubeClient, crdClient)
+
+			stopCh := make(chan struct{})
+
+			eventCh, err := client.WatchAll(nil, stopCh)
+			require.NoError(t, err)
+
+			if k8sObjects != nil || crdObjects != nil {
+				// just wait for the first event
+				<-eventCh
+			}
+
+			p := Provider{
+				AllowCrossNamespace:     true,
+				CrossProviderNamespaces: test.crossProviderNamespaces,
+			}
+
+			conf := p.loadConfigurationFromCRD(t.Context(), client)
+
+			service, ok := conf.HTTP.Services["default-test-route-6b204d94623b3df4370c"]
+			if test.wantServiceDropped {
+				assert.False(t, ok)
+				return
+			}
+
+			require.True(t, ok)
+			require.NotNil(t, service.LoadBalancer)
+			assert.Equal(t, "foo@file", service.LoadBalancer.ServersTransport)
 		})
 	}
 }

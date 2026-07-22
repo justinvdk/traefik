@@ -8,7 +8,9 @@ import (
 	"hash/fnv"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/traefik/traefik/v3/pkg/config/dynamic"
 )
@@ -27,6 +29,7 @@ type stickyCookie struct {
 	httpOnly bool
 	sameSite http.SameSite
 	maxAge   int
+	expires  time.Time
 	path     string
 	domain   string
 }
@@ -58,6 +61,9 @@ func NewSticky(cookieConfig dynamic.Cookie) *Sticky {
 	}
 	if cookieConfig.Path != nil {
 		cookie.path = *cookieConfig.Path
+	}
+	if cookieConfig.Expires > 0 {
+		cookie.expires = time.Now().Add(time.Duration(cookieConfig.Expires) * time.Second)
 	}
 
 	return &Sticky{
@@ -137,6 +143,7 @@ func (s *Sticky) WriteStickyCookie(rw http.ResponseWriter, name string) error {
 		Secure:   s.cookie.secure,
 		SameSite: s.cookie.sameSite,
 		MaxAge:   s.cookie.maxAge,
+		Expires:  s.cookie.expires,
 	}
 	http.SetCookie(rw, cookie)
 
@@ -144,7 +151,7 @@ func (s *Sticky) WriteStickyCookie(rw http.ResponseWriter, name string) error {
 }
 
 func convertSameSite(sameSite string) http.SameSite {
-	switch sameSite {
+	switch strings.ToLower(sameSite) {
 	case "none":
 		return http.SameSiteNoneMode
 	case "lax":
